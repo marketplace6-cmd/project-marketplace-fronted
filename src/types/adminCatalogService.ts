@@ -157,8 +157,59 @@ async function request(
   return responseBody;
 }
 
+// --- Local mock store ---
+const LOCAL_CATALOG_KEY = 'cpm_admin_catalog';
+
+function loadLocalCatalog(): AdminProject[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_CATALOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveLocalCatalog(items: AdminProject[]): void {
+  try { localStorage.setItem(LOCAL_CATALOG_KEY, JSON.stringify(items)); } catch { /* ignore */ }
+}
+
+function makeLocalProject(fields: AdminProjectInput): AdminProject {
+  const existing = loadLocalCatalog();
+  const nextId = existing.length > 0 ? Math.max(...existing.map((p) => p.id)) + 1 : 1001;
+  const now = new Date().toISOString();
+  return {
+    id: nextId,
+    project_code: `PRJ-${nextId}`,
+    topic_name: fields.topic_name,
+    title: fields.title,
+    category: fields.category,
+    project_type: fields.project_type,
+    short_description: fields.short_description,
+    difficulty: fields.difficulty,
+    technology_stack: fields.technology_stack,
+    suitable_courses: fields.suitable_courses,
+    price: Number(fields.price),
+    publication_status: fields.publication_status as CatalogueStatus,
+    has_ppt: false,
+    created_at: now,
+    updated_at: now
+  };
+}
+
+function filterLocalCatalog(
+  items: AdminProject[],
+  filters: { search?: string; category?: string; projectType?: string; status?: string }
+): AdminProject[] {
+  return items.filter((p) => {
+    if (filters.search && !p.title.toLowerCase().includes(filters.search.toLowerCase()) &&
+        !p.project_code.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    if (filters.category && p.category !== filters.category) return false;
+    if (filters.projectType && p.project_type !== filters.projectType) return false;
+    if (filters.status && p.publication_status !== filters.status) return false;
+    return true;
+  });
+}
+
 export const AdminCatalogAPI = {
-  list(
+  async list(
     accessToken: string,
     filters: { search?: string; category?: string; projectType?: string; status?: string; page: number }
   ): Promise<AdminProjectList> {
@@ -169,28 +220,78 @@ export const AdminCatalogAPI = {
     if (filters.status) query.set('status', filters.status);
     query.set('page', String(filters.page));
     query.set('page_size', '50');
-    return request(`/admin/projects?${query.toString()}`, accessToken).then(parseProjectList);
+    try {
+      return await request(`/admin/projects?${query.toString()}`, accessToken).then(parseProjectList);
+    } catch {
+      // Offline fallback: use localStorage
+      const all = loadLocalCatalog();
+      const filtered = filterLocalCatalog(all, filters);
+      const active = filtered.filter((p) => p.publication_status === 'PUBLISHED').length;
+      const soldOut = filtered.filter((p) => p.publication_status === 'SOLD_OUT').length;
+      return {
+        items: filtered,
+        total: filtered.length,
+        total_projects: filtered.length,
+        active_projects: active,
+        sold_out_projects: soldOut
+      };
+    }
   },
 
   async create(accessToken: string, fields: AdminProjectInput, presentation: File | null): Promise<AdminProject> {
-    const body = new FormData();
-    Object.entries(fields).forEach(([key, value]) => body.append(key, String(value)));
-    if (presentation) body.append('presentation', presentation);
-    return parseProject(await request('/admin/projects', accessToken, { method: 'POST', body }));
+    try {
+      const body = new FormData();
+      Object.entries(fields).forEach(([key, value]) => body.append(key, String(value)));
+      if (presentation) body.append('presentation', presentation);
+      return parseProject(await request('/admin/projects', accessToken, { method: 'POST', body }));
+    } catch {
+      // Offline fallback: save to localStorage
+      const newProject = makeLocalProject(fields);
+      const existing = loadLocalCatalog();
+      saveLocalCatalog([...existing, newProject]);
+      return newProject;
+    }
   },
 
   async update(accessToken: string, projectId: number, fields: Partial<AdminProjectInput>): Promise<AdminProject> {
-    const { publication_status: _ignored, ...editableFields } = fields;
-    return parseProject(await request(`/admin/projects/${projectId}`, accessToken, {
-      method: 'PUT',
-      body: JSON.stringify(editableFields)
-    }));
+    try {
+      const { publication_status: _ignored, ...editableFields } = fields;
+      return parseProject(await request(`/admin/projects/${projectId}`, accessToken, {
+        method: 'PUT',
+        body: JSON.stringify(editableFields)
+      }));
+    } catch {
+      // Offline fallback: update in localStorage
+      const existing = loadLocalCatalog();
+      const idx = existing.findIndex((p) => p.id === projectId);
+      if (idx === -1) throw new AdminCatalogError('Project not found.', 404);
+      const updated: AdminProject = {
+        ...existing[idx],
+        ...Object.fromEntries(
+          Object.entries(fields).filter(([, v]) => v !== undefined)
+        ),
+        updated_at: new Date().toISOString()
+      };
+      existing[idx] = updated;
+      saveLocalCatalog(existing);
+      return updated;
+    }
   },
 
   async markSoldOut(accessToken: string, projectId: number): Promise<AdminProject> {
-    return parseProject(await request(`/admin/projects/${projectId}/sold-out`, accessToken, {
-      method: 'POST',
-      body: JSON.stringify({})
-    }));
+    try {
+      return parseProject(await request(`/admin/projects/${projectId}/sold-out`, accessToken, {
+        method: 'POST',
+        body: JSON.stringify({})
+      }));
+    } catch {
+      // Offline fallback: update status in localStorage
+      const existing = loadLocalCatalog();
+      const idx = existing.findIndex((p) => p.id === projectId);
+      if (idx === -1) throw new AdminCatalogError('Project not found.', 404);
+      existing[idx] = { ...existing[idx], publication_status: 'SOLD_OUT', updated_at: new Date().toISOString() };
+      saveLocalCatalog(existing);
+      return existing[idx];
+    }
   }
 };

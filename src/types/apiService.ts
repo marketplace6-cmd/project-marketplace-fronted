@@ -2,7 +2,6 @@ import {
   ProjectDTO,
   StudentProfile,
   MeetingRecord,
-  ReferralRecord,
   OrderRecord,
   SupportTicket
 } from './types';
@@ -10,7 +9,6 @@ import {
   INITIAL_PROJECTS,
   INITIAL_STUDENT,
   INITIAL_MEETINGS,
-  INITIAL_REFERRALS,
   INITIAL_ORDERS,
   INITIAL_TICKETS
 } from './mockData';
@@ -94,15 +92,10 @@ export const MarketplaceAPI = {
     });
   },
 
-  // 6. Fetch Meetings, Referrals, Orders & Support Tickets
+  // 6. Fetch Meetings, Orders & Support Tickets
   async getMeetings(): Promise<MeetingRecord[]> {
     if (USE_MOCK_API) return Promise.resolve(INITIAL_MEETINGS);
     return request<MeetingRecord[]>('/meetings');
-  },
-
-  async getReferrals(): Promise<ReferralRecord[]> {
-    if (USE_MOCK_API) return Promise.resolve(INITIAL_REFERRALS);
-    return request<ReferralRecord[]>('/referrals');
   },
 
   async getOrders(): Promise<OrderRecord[]> {

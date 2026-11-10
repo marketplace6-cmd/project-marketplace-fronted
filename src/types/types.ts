@@ -28,9 +28,11 @@ export type MeetingStatus =
 
 export interface ProjectDTO {
   id: string;
+  projectCode?: string;
+  topicName?: string;
   title: string; // Single unified title field
-  category: ProjectCategory;
-  projectType: 'Major Project' | 'Minor Project' | 'Final Year Capstone';
+  category: string;
+  projectType: 'Major Project' | 'Minor Project' | 'Final Year Capstone' | string;
   shortDescription: string;
   problemStatement: string;
   technologies: string[];
@@ -39,6 +41,8 @@ export interface ProjectDTO {
   featureCategories: string[];
   deliverables: string[];
   previewEligible: boolean;
+  availability?: 'ACTIVE' | 'SOLD_OUT';
+  hasPpt?: boolean;
   price: number; // Hidden on public cards; shown only during verified evaluation/checkout
   genericPatternTheme: string; // Safe abstract visual gradient
   pptSlides: {
@@ -58,16 +62,6 @@ export interface MeetingRecord {
   durationMinutes: 5;
   status: MeetingStatus;
   meetLink?: string;
-}
-
-export interface ReferralRecord {
-  id: string;
-  referredStudentName: string;
-  college: string;
-  date: string;
-  purchaseAmount?: number;
-  rewardAmount?: number; // Authoritative 20% from backend
-  status: 'Referral Registered' | 'Purchase Pending' | 'Reward Pending' | 'Reward Approved' | 'Reward Reversed';
 }
 
 export interface OrderRecord {
@@ -92,6 +86,7 @@ export interface SupportTicket {
 
 export interface StudentProfile {
   id: string;
+  accessToken?: string;
   fullName: string;
   mobile: string;
   email: string;
@@ -108,7 +103,4 @@ export interface StudentProfile {
   };
   viewedProjectIds: string[];
   selectedProjectIds: string[]; // Max 3
-  referralCode: string;
-  referralLink: string;
-  availableRewardBalance: number;
 }

@@ -1,19 +1,28 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ShieldCheck, Search, Filter, Heart, Calendar, CheckCircle2,
   Lock, FileText, Award, HelpCircle, LogOut, Menu, X, ChevronRight,
-  ChevronLeft, Copy, Upload, ExternalLink, CreditCard,
+  ChevronLeft, Upload, ExternalLink, CreditCard,
   Layers, Code2, Cpu, Smartphone, Database, Cloud, Sparkles,
-  Check, UserCheck, PlusCircle, Eye, Ban, LayoutDashboard
+  Check, UserCheck, Eye, EyeOff, LayoutDashboard
 } from 'lucide-react';
 import {
-  AuthState, ProjectCategory, ProjectDTO,
-  MeetingRecord, ReferralRecord, OrderRecord, SupportTicket, StudentProfile
+  ProjectCategory, ProjectDTO,
+  MeetingRecord, SupportTicket, StudentProfile
 } from './types';
 import {
   INITIAL_PROJECTS, INITIAL_STUDENT, INITIAL_MEETINGS,
-  INITIAL_REFERRALS, INITIAL_ORDERS, INITIAL_TICKETS, AVAILABLE_TIME_SLOTS
+  INITIAL_TICKETS, AVAILABLE_TIME_SLOTS
 } from './mockData';
+import { AdminAuthAPI, AdminAuthError } from './adminAuthService';
+import { getPublicProjects, ProjectCatalogueError, useMockCatalogue } from './projectCatalogueService';
+import StudentVerificationPage from './StudentVerificationPage';
+import { StudentAuthAPI, StudentTokenResponse, VerificationApiError } from './verificationService';
+import { StudentCommerceAPI, StudentOrderRecord } from './commerceService';
+import StudentCommercePanel from './StudentCommercePanel';
+import AdminDashboard from './admin/AdminDashboard';
+import StudentReferralPage from './StudentReferralPage';
+import { ReferralApiError, StudentReferralAPI } from './referralService';
 
 type PageRoute =
   | 'home'
@@ -23,6 +32,8 @@ type PageRoute =
   | 'how-it-works'
   | 'login'
   | 'signup'
+  | 'admin-login'
+  | 'admin-change-password'
   | 'verification'
   | 'selected-projects'
   | 'schedule-meet'
@@ -48,7 +59,12 @@ const CATEGORIES: { name: ProjectCategory; icon: React.ReactNode; count: string 
 
 export default function App() {
   // Persistent state using localStorage
-  const [currentRoute, setCurrentRoute] = useState<PageRoute>('home');
+  const [currentRoute, setCurrentRoute] = useState<PageRoute>(() => {
+    const hasReferralCode = new URLSearchParams(window.location.search).has('ref');
+    return window.location.pathname.replace(/\/+$/, '') === '/register' || hasReferralCode
+      ? 'signup'
+      : 'home';
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [student, setStudent] = useState<StudentProfile>(() => {
@@ -56,7 +72,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.authState && parsed.authState !== 'logged_out' && parsed.email) {
+        if (parsed && parsed.accessToken && parsed.authState && parsed.authState !== 'logged_out' && parsed.email) {
           return parsed;
         }
       } catch { /* fallback */ }
@@ -65,25 +81,47 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('cpm_student_session', JSON.stringify(student));
+    const persistedStudent = { ...student };
+    delete persistedStudent.accessToken;
+    localStorage.setItem('cpm_student_session', JSON.stringify(persistedStudent));
   }, [student]);
 
-  // UPI / Payout Method State
-  const [upiLinked, setUpiLinked] = useState<string | null>(localStorage.getItem('cpm_upi_id'));
-  const [upiInput, setUpiInput] = useState('');
-  const [showUpiOtp, setShowUpiOtp] = useState(false);
-
-  const [projects, setProjects] = useState<ProjectDTO[]>(INITIAL_PROJECTS);
+  const [projects, setProjects] = useState<ProjectDTO[]>(useMockCatalogue ? INITIAL_PROJECTS : []);
+  const [catalogueLoading, setCatalogueLoading] = useState(!useMockCatalogue);
+  const [catalogueError, setCatalogueError] = useState('');
   const [activeProjectId, setActiveProjectId] = useState<string>('PRJ-101');
   const [meetings, setMeetings] = useState<MeetingRecord[]>(INITIAL_MEETINGS);
-  const [referrals] = useState<ReferralRecord[]>(INITIAL_REFERRALS);
-  const [orders, setOrders] = useState<OrderRecord[]>(INITIAL_ORDERS);
   const [tickets, setTickets] = useState<SupportTicket[]>(INITIAL_TICKETS);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'activity' | 'meetings' | 'referrals' | 'purchases' | 'support'>('overview');
-  const [adminTab, setAdminTab] = useState<'overview' | 'projects' | 'verifications' | 'meetings' | 'orders' | 'referrals'>('overview');
+  const referralCodeFromUrl = useMemo(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('ref')?.trim() || '';
+    } catch {
+      return '';
+    }
+  }, []);
+  const [adminUserId, setAdminUserId] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [adminLoginMessage, setAdminLoginMessage] = useState('');
+  const [adminSubmitting, setAdminSubmitting] = useState(false);
+  const [adminSession, setAdminSession] = useState<{ accessToken: string; mustChangePassword: boolean } | null>(null);
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
+  const [adminPasswordMessage, setAdminPasswordMessage] = useState('');
+  const [studentContact, setStudentContact] = useState('');
+  const [studentOtp, setStudentOtp] = useState('');
+  const [studentOtpRequested, setStudentOtpRequested] = useState(false);
+  const [studentSignupName, setStudentSignupName] = useState('');
+  const [studentSignupCollege, setStudentSignupCollege] = useState('');
+  const [studentSignupCourse, setStudentSignupCourse] = useState('');
+  const [studentAuthMessage, setStudentAuthMessage] = useState('');
+  const [studentAuthLoading, setStudentAuthLoading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -94,20 +132,307 @@ export default function App() {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
   const [checkoutProjectId, setCheckoutProjectId] = useState<string>('PRJ-101');
-  const [applyReferralBalance, setApplyReferralBalance] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [paymentState, setPaymentState] = useState<'idle' | 'Payment Pending' | 'Payment Successful' | 'Payment Failed'>('idle');
+  const [checkoutOrder, setCheckoutOrder] = useState<StudentOrderRecord | null>(null);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
 
+  useEffect(() => {
+    if (useMockCatalogue) return;
+    let active = true;
+    void getPublicProjects()
+      .then((result) => {
+        if (active) {
+          setCatalogueError('');
+          setProjects(result);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setCatalogueError(
+            error instanceof ProjectCatalogueError
+              ? error.message
+              : 'Unable to load the project catalogue.'
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setCatalogueLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loadPublicCatalogue = useCallback(async () => {
+    if (useMockCatalogue) return;
+    setCatalogueLoading(true);
+    try {
+      const result = await getPublicProjects();
+      setCatalogueError('');
+      setProjects(result);
+    } catch (error) {
+      setCatalogueError(
+        error instanceof ProjectCatalogueError
+          ? error.message
+          : 'Unable to load the project catalogue.'
+      );
+    } finally {
+      setCatalogueLoading(false);
+    }
+  }, []);
+
   const navigate = (route: PageRoute) => {
     setCurrentRoute(route);
     setMobileMenuOpen(false);
     setSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAdminSessionExpired = useCallback(() => {
+    setAdminSession(null);
+    setAdminLoginMessage('Your Admin session expired. Please sign in again.');
+    setCurrentRoute('admin-login');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleStudentSessionExpired = useCallback(() => {
+    setStudent((previous) => ({
+      ...previous,
+      accessToken: undefined,
+      authState: 'logged_out'
+    }));
+    setStudentOtpRequested(false);
+    setStudentAuthMessage('Your student session expired. Please sign in again.');
+    setCurrentRoute('login');
+  }, []);
+
+  const handleStudentApproved = useCallback(() => {
+    setStudent((previous) => ({ ...previous, authState: 'verified' }));
+  }, []);
+
+  const handleStudentSelectionsLoaded = useCallback((projectIds: string[]) => {
+    setStudent((previous) => ({ ...previous, selectedProjectIds: projectIds }));
+  }, []);
+
+  useEffect(() => {
+    if (!student.accessToken) return;
+    let active = true;
+    void StudentCommerceAPI.listSelections(student.accessToken)
+      .then((selections) => {
+        if (active) {
+          setStudent((previous) => ({
+            ...previous,
+            selectedProjectIds: selections.map((selection) => String(selection.project_id))
+          }));
+        }
+      })
+      .catch((error: unknown) => {
+        if (active && error instanceof VerificationApiError && [401, 403].includes(error.status)) {
+          handleStudentSessionExpired();
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [handleStudentSessionExpired, student.accessToken]);
+
+  const requestStudentOtp = async (mode: 'login' | 'signup') => {
+    const contact = studentContact.trim();
+    if (!contact) {
+      setStudentAuthMessage('Enter your phone number or email address.');
+      return;
+    }
+    if (mode === 'login' && contact.includes('@')) {
+      setStudentAuthMessage('Student sign in currently uses the registered phone number.');
+      return;
+    }
+    if (mode === 'signup' && (!studentSignupName.trim() || !studentSignupCollege.trim() || !studentSignupCourse.trim())) {
+      setStudentAuthMessage('Enter your name, college or university, and course.');
+      return;
+    }
+
+    setStudentAuthLoading(true);
+    setStudentAuthMessage('');
+    try {
+      if (mode === 'signup' && referralCodeFromUrl) {
+        const validReferral = await StudentReferralAPI.validateCode(referralCodeFromUrl);
+        if (!validReferral) throw new ReferralApiError('This referral link is invalid or inactive.', 404);
+      }
+      const response = mode === 'login'
+        ? await StudentAuthAPI.requestLoginOtp(contact)
+        : await StudentAuthAPI.requestSignupOtp({
+            full_name: studentSignupName.trim(),
+            department: studentSignupCourse.trim(),
+            university_name: studentSignupCollege.trim(),
+            contact_type: contact.includes('@') ? 'email' : 'phone',
+            contact_value: contact,
+            referral_code: referralCodeFromUrl || undefined
+          });
+      setStudentOtpRequested(true);
+      setStudentAuthMessage(response.code
+        ? `Development OTP (no SMS/email provider is configured): ${response.code}`
+        : 'OTP requested. Enter the code delivered to your contact.');
+    } catch (requestError) {
+      setStudentAuthMessage(
+        requestError instanceof VerificationApiError
+          ? requestError.message
+          : requestError instanceof Error ? requestError.message : 'Unable to request a sign-in code.'
+      );
+    } finally {
+      setStudentAuthLoading(false);
+    }
+  };
+
+  const verifyStudentOtp = async (mode: 'login' | 'signup') => {
+    if (!studentOtp.trim()) {
+      setStudentAuthMessage('Enter the one-time code.');
+      return;
+    }
+    setStudentAuthLoading(true);
+    setStudentAuthMessage('');
+    try {
+      const contact = studentContact.trim();
+      const response: StudentTokenResponse = mode === 'login'
+        ? await StudentAuthAPI.verifyLoginOtp(contact, studentOtp.trim())
+        : await StudentAuthAPI.verifySignupOtp({
+            full_name: studentSignupName.trim(),
+            department: studentSignupCourse.trim(),
+            university_name: studentSignupCollege.trim(),
+            contact_type: contact.includes('@') ? 'email' : 'phone',
+            contact_value: contact,
+            code: studentOtp.trim(),
+            referral_code: referralCodeFromUrl || undefined
+          });
+      setStudent({
+        ...INITIAL_STUDENT,
+        id: String(response.user_id),
+        accessToken: response.access_token,
+        fullName: studentSignupName.trim() || student.fullName,
+        email: contact.includes('@') ? contact : '',
+        mobile: contact.includes('@') ? '' : contact,
+        collegeName: studentSignupCollege.trim() || student.collegeName,
+        authState: 'logged_in',
+        role: 'student'
+      });
+      setStudentOtpRequested(false);
+      setStudentOtp('');
+      setStudentAuthMessage('');
+      navigate('verification');
+    } catch (requestError) {
+      setStudentAuthMessage(
+        requestError instanceof VerificationApiError
+          ? requestError.message
+          : requestError instanceof Error ? requestError.message : 'Unable to verify the one-time code.'
+      );
+    } finally {
+      setStudentAuthLoading(false);
+    }
+  };
+
+  const handleAdminLogin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!adminUserId.trim() || !adminPassword) {
+      setAdminLoginMessage('Enter your Admin User ID and password.');
+      return;
+    }
+
+    setAdminSubmitting(true);
+    setAdminLoginMessage('');
+    try {
+      const response = await AdminAuthAPI.login(adminUserId.trim(), adminPassword);
+      setAdminSession({
+        accessToken: response.access_token,
+        mustChangePassword: response.must_change_password
+      });
+      setAdminPassword('');
+      if (response.must_change_password) {
+        navigate('admin-change-password');
+      } else {
+        navigate('admin');
+      }
+    } catch (error) {
+      if (error instanceof AdminAuthError && error.status === 401) {
+        setAdminLoginMessage('Invalid Admin User ID or password.');
+      } else if (error instanceof AdminAuthError && error.status === 429) {
+        setAdminLoginMessage(error.message);
+      } else {
+        setAdminLoginMessage(error instanceof Error ? error.message : 'Unable to reach the authentication service.');
+      }
+    } finally {
+      setAdminSubmitting(false);
+    }
+  };
+
+  const handleAdminPasswordChange = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!adminSession || !adminSession.mustChangePassword) {
+      setAdminPasswordMessage('Admin authentication is required.');
+      return;
+    }
+    if (newAdminPassword !== confirmAdminPassword) {
+      setAdminPasswordMessage('The passwords do not match.');
+      return;
+    }
+    if (
+      newAdminPassword.length < 12 ||
+      !/[a-z]/.test(newAdminPassword) ||
+      !/[A-Z]/.test(newAdminPassword) ||
+      !/[0-9]/.test(newAdminPassword) ||
+      !/[^A-Za-z0-9]/.test(newAdminPassword)
+    ) {
+      setAdminPasswordMessage('Use at least 12 characters with lowercase, uppercase, a number, and a symbol.');
+      return;
+    }
+
+    setAdminSubmitting(true);
+    setAdminPasswordMessage('');
+    try {
+      const response = await AdminAuthAPI.changePassword(newAdminPassword, adminSession.accessToken);
+      setAdminSession({ accessToken: response.access_token, mustChangePassword: false });
+      setNewAdminPassword('');
+      setConfirmAdminPassword('');
+      navigate('admin');
+    } catch (error) {
+      if (error instanceof AdminAuthError && error.status === 401) {
+        setAdminSession(null);
+        navigate('admin-login');
+        setAdminLoginMessage('Your Admin session expired. Please sign in again.');
+      } else {
+        setAdminPasswordMessage(error instanceof Error ? error.message : 'Unable to update the password.');
+      }
+    } finally {
+      setAdminSubmitting(false);
+    }
+  };
+
+  const handleAdminLogout = async () => {
+    if (!adminSession) {
+      navigate('admin-login');
+      return;
+    }
+    setAdminSubmitting(true);
+    try {
+      await AdminAuthAPI.logout(adminSession.accessToken);
+      setAdminSession(null);
+      navigate('admin-login');
+    } catch (error) {
+      if (error instanceof AdminAuthError && error.status === 401) {
+        setAdminSession(null);
+        navigate('admin-login');
+      } else {
+        showToast(
+          error instanceof Error ? `Logout failed: ${error.message}` : 'Logout failed. The server session may still be active.',
+          'error'
+        );
+      }
+    } finally {
+      setAdminSubmitting(false);
+    }
   };
 
   const activeProject = useMemo(() => projects.find((p) => p.id === activeProjectId) || projects[0], [projects, activeProjectId]);
@@ -119,6 +444,18 @@ export default function App() {
   };
 
   const handleOpenPptPreview = (project: ProjectDTO) => {
+    if (project.availability === 'SOLD_OUT') {
+      showToast('This project is Sold Out. New previews are unavailable.', 'error');
+      return;
+    }
+    if (!project.previewEligible) {
+      showToast('A presentation preview is not available for this project.', 'error');
+      return;
+    }
+    if (!useMockCatalogue) {
+      showToast('Secure preview requires an authenticated backend student session.', 'error');
+      return;
+    }
     if (student.authState === 'logged_out') {
       showToast('Please log in and verify your student ID to access PPT previews.', 'error');
       navigate('login');
@@ -154,28 +491,47 @@ export default function App() {
     navigate('ppt-preview');
   };
 
-  const handleToggleSelectProject = (projectId: string) => {
+  const handleToggleSelectProject = async (projectId: string) => {
+    if (projects.find((project) => project.id === projectId)?.availability === 'SOLD_OUT') {
+      showToast('Sold Out projects cannot be selected for new guidance requests.', 'error');
+      return;
+    }
     if (student.authState !== 'verified') {
       showToast('Only verified students can select projects for meetings.', 'error');
       return;
     }
+    if (!student.accessToken) {
+      showToast('Sign in to save a project selection.', 'error');
+      navigate('login');
+      return;
+    }
     const isSelected = student.selectedProjectIds.includes(projectId);
-    if (isSelected) {
-      setStudent((prev) => ({
-        ...prev,
-        selectedProjectIds: prev.selectedProjectIds.filter((id) => id !== projectId),
-      }));
-      showToast('Project removed from your selected list.', 'info');
-    } else {
-      if (student.selectedProjectIds.length >= 3) {
-        showToast('Maximum limit reached: You can select up to 3 projects for guidance meetings.', 'error');
-        return;
+    if (!isSelected && student.selectedProjectIds.length >= 3) {
+      showToast('Maximum limit reached: You can select up to 3 projects for guidance meetings.', 'error');
+      return;
+    }
+    try {
+      if (isSelected) {
+        await StudentCommerceAPI.removeSelection(student.accessToken, Number(projectId));
+        setStudent((prev) => ({
+          ...prev,
+          selectedProjectIds: prev.selectedProjectIds.filter((id) => id !== projectId),
+        }));
+        showToast('Project removed from your selected list.', 'info');
+      } else {
+        await StudentCommerceAPI.addSelection(student.accessToken, Number(projectId));
+        setStudent((prev) => ({
+          ...prev,
+          selectedProjectIds: [...prev.selectedProjectIds, projectId],
+        }));
+        showToast('Project added to Selected Projects (eligible for a 5-min guidance meeting).', 'success');
       }
-      setStudent((prev) => ({
-        ...prev,
-        selectedProjectIds: [...prev.selectedProjectIds, projectId],
-      }));
-      showToast('Project added to Selected Projects (eligible for a 5-min guidance meeting).', 'success');
+    } catch (error) {
+      if (error instanceof VerificationApiError && [401, 403].includes(error.status)) {
+        handleStudentSessionExpired();
+      } else {
+        showToast(error instanceof Error ? error.message : 'Unable to update your project selection.', 'error');
+      }
     }
   };
 
@@ -222,6 +578,11 @@ export default function App() {
               {project.difficulty}
             </span>
           </div>
+          {project.availability === 'SOLD_OUT' && (
+            <span className="absolute right-3 top-12 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-extrabold tracking-wide text-white shadow">
+              <Lock className="h-3 w-3" /> SOLD OUT
+            </span>
+          )}
           <div className="flex items-center justify-between text-white/90 text-xs">
             <span className="font-mono bg-black/25 px-2 py-0.5 rounded">{project.category}</span>
             {isViewed && (
@@ -259,7 +620,7 @@ export default function App() {
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
               <span className="text-xs text-slate-500 flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                {isSelected ? 'Selected for Meet' : 'Protected Preview'}
+                {project.availability === 'SOLD_OUT' ? 'Sold Out' : isSelected ? 'Selected for Meet' : 'Protected Preview'}
               </span>
               <button
                 onClick={() => handleViewProject(project.id)}
@@ -415,7 +776,18 @@ export default function App() {
             </button>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.slice(0, 6).map((proj) => renderProjectCard(proj))}
+            {catalogueLoading ? (
+              <p className="col-span-full rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading live catalogue…</p>
+            ) : catalogueError ? (
+              <div role="alert" className="col-span-full rounded-xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-800">
+                {catalogueError}
+                <button onClick={() => { setCatalogueLoading(true); void loadPublicCatalogue(); }} className="ml-3 font-semibold underline">Retry</button>
+              </div>
+            ) : projects.length ? (
+              projects.slice(0, 6).map((proj) => renderProjectCard(proj))
+            ) : (
+              <p className="col-span-full rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">No projects are currently available.</p>
+            )}
           </div>
         </div>
       </section>
@@ -454,7 +826,7 @@ export default function App() {
           <h2 className="text-2xl font-bold text-center mb-10">Why Verified Students Choose Us</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-6">
             {[
-              { title: 'Budget-Friendly', desc: 'Pocket-friendly student pricing with extra 20% referral rewards.' },
+              { title: 'Budget-Friendly', desc: 'Pocket-friendly student pricing with eligible referral rewards applied automatically by the backend.' },
               { title: 'Verified Access Only', desc: 'Strict college ID verification keeps public plagiarism away.' },
               { title: 'Protected Previews', desc: 'Evaluate 5 watermarked PPTs per 90-day cycle before deciding.' },
               { title: 'Scheduled Guidance', desc: 'Up to three 5-minute 1-on-1 Google Meet slots for shortlisted projects.' },
@@ -474,6 +846,8 @@ export default function App() {
 
   const renderExplorePage = () => {
     const allTechs = Array.from(new Set(projects.flatMap((p) => p.technologies)));
+    const allCategories = Array.from(new Set([...CATEGORIES.map((item) => item.name), ...projects.map((project) => project.category)]));
+    const allProjectTypes = Array.from(new Set(projects.map((project) => project.projectType)));
 
     const filtered = projects.filter((p) => {
       const matchesSearch =
@@ -498,6 +872,12 @@ export default function App() {
           </div>
           {student.authState === 'verified' && renderHeartCredits()}
         </div>
+        {catalogueError && (
+          <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            <span>{catalogueError}</span>
+            <button onClick={() => { setCatalogueLoading(true); void loadPublicCatalogue(); }} className="font-semibold underline">Retry</button>
+          </div>
+        )}
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-8 space-y-4">
           <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -518,8 +898,8 @@ export default function App() {
               className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
             >
               <option value="All">All Categories</option>
-              {CATEGORIES.map((c) => (
-                <option key={c.name} value={c.name}>{c.name}</option>
+              {allCategories.map((name) => (
+                <option key={name} value={name}>{name}</option>
               ))}
             </select>
 
@@ -529,9 +909,9 @@ export default function App() {
               className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
             >
               <option value="All">All Project Types</option>
-              <option value="Minor Project">Minor Project</option>
-              <option value="Major Project">Major Project</option>
-              <option value="Final Year Capstone">Final Year Capstone</option>
+              {allProjectTypes.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
             </select>
 
             <select
@@ -572,12 +952,16 @@ export default function App() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {catalogueLoading ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">Loading live catalogue…</div>
+        ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
             <Search className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-slate-900">No Matching Projects Found</h3>
+            <h3 className="text-lg font-bold text-slate-900">{projects.length ? 'No Matching Projects Found' : 'No Projects Available'}</h3>
             <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto">
-              No projects match your current filter combination. Try resetting the technology or difficulty filters.
+              {projects.length
+                ? 'No projects match your current filter combination. Try resetting the technology or difficulty filters.'
+                : 'The live catalogue is empty. Please check back later.'}
             </p>
             <button
               onClick={() => {
@@ -626,6 +1010,11 @@ export default function App() {
               <span className="px-3 py-1 bg-black/25 rounded-full text-xs font-medium">
                 Difficulty: {activeProject.difficulty}
               </span>
+              {activeProject.availability === 'SOLD_OUT' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-xs font-extrabold text-white">
+                  <Lock className="h-3.5 w-3.5" /> SOLD OUT
+                </span>
+              )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold">{activeProject.title}</h1>
             <p className="text-white/90 text-sm sm:text-base mt-2 max-w-3xl">
@@ -715,13 +1104,19 @@ export default function App() {
 
                 {student.authState === 'verified' ? (
                   <div className="bg-white p-3.5 rounded-lg border border-slate-200">
-                    <div className="text-xs text-slate-500">Verified Student Price</div>
-                    <div className="text-2xl font-extrabold text-slate-900">
-                      ₹{activeProject.price.toLocaleString('en-IN')}
-                    </div>
-                    <div className="text-[11px] text-emerald-700 font-medium mt-0.5">
-                      Includes complete deliverables & report
-                    </div>
+                    {activeProject.availability === 'SOLD_OUT' ? (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600"><Lock size={16} /> Sold Out — no new purchases</div>
+                    ) : (
+                      <>
+                        <div className="text-xs text-slate-500">Verified Student Price</div>
+                        <div className="text-2xl font-extrabold text-slate-900">
+                          ₹{activeProject.price.toLocaleString('en-IN')}
+                        </div>
+                        <div className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                          Includes complete deliverables & report
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-white p-3.5 rounded-lg border border-slate-200 text-xs text-slate-600">
@@ -735,7 +1130,15 @@ export default function App() {
                 </div>
 
                 {/* MODIFIED: PPT Lock Mechanism */}
-                {student.authState === 'verified' ? (
+                {activeProject.availability === 'SOLD_OUT' ? (
+                  <button disabled className="w-full py-2.5 px-4 bg-slate-100 text-slate-500 text-sm font-bold rounded-xl flex items-center justify-center gap-2 cursor-not-allowed border border-slate-200">
+                    <Lock className="w-4 h-4" /> Sold Out — Preview Locked
+                  </button>
+                ) : !activeProject.previewEligible ? (
+                  <button disabled className="w-full py-2.5 px-4 bg-slate-100 text-slate-500 text-sm font-bold rounded-xl flex items-center justify-center gap-2 cursor-not-allowed border border-slate-200">
+                    <Lock className="w-4 h-4" /> PPT Preview Unavailable
+                  </button>
+                ) : student.authState === 'verified' ? (
                   <button
                     onClick={() => handleOpenPptPreview(activeProject)}
                     className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2"
@@ -752,7 +1155,7 @@ export default function App() {
                   </button>
                 )}
 
-                {isViewed && student.authState === 'verified' && (
+                {isViewed && student.authState === 'verified' && activeProject.availability !== 'SOLD_OUT' && (
                   <button
                     onClick={() => handleToggleSelectProject(activeProject.id)}
                     className={`w-full py-2.5 px-4 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
@@ -777,11 +1180,11 @@ export default function App() {
                   </button>
                 )}
 
-                {student.authState === 'verified' && (
+                {student.authState === 'verified' && activeProject.availability !== 'SOLD_OUT' && (
                   <button
                     onClick={() => {
                       setCheckoutProjectId(activeProject.id);
-                      setPaymentState('idle');
+                      setCheckoutOrder(null);
                       navigate('checkout');
                     }}
                     className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2"
@@ -798,6 +1201,15 @@ export default function App() {
   };
 
   const renderPptPreviewPage = () => {
+    if (!useMockCatalogue) {
+      return (
+        <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+          <Lock className="mx-auto h-10 w-10 text-slate-400" />
+          <h1 className="mt-4 text-xl font-bold text-slate-900">Secure preview unavailable</h1>
+          <p className="mt-2 text-sm text-slate-600">A backend-authenticated student session is required to open protected presentations.</p>
+        </div>
+      );
+    }
     const slides = activeProject.pptSlides;
     const currentSlide = slides[currentSlideIndex] || slides[0];
 
@@ -899,185 +1311,255 @@ export default function App() {
   const renderAuthAndVerificationPage = (mode: 'login' | 'signup' | 'verification') => {
     if (mode === 'verification') {
       return (
-        <div className="max-w-xl mx-auto py-12 px-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h1 className="text-xl font-bold text-slate-900">Student Identity Verification</h1>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                student.authState === 'verified'
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : student.authState === 'verification_rejected'
-                  ? 'bg-rose-100 text-rose-800'
-                  : 'bg-amber-100 text-amber-800'
-              }`}>
-                {student.authState === 'verified'
-                  ? 'Verification Approved'
-                  : student.authState === 'verification_rejected'
-                  ? 'Verification Rejected'
-                  : 'Verification Pending (Required)'}
-              </span>
-            </div>
-
-            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
-              <strong>Mandatory Step:</strong> To unlock 5 protected PPT preview hearts (♥) and guidance meeting booking, you must upload your valid college or university student ID card. Unverified accounts cannot preview projects.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">College / University / Institute Name</label>
-                <input
-                  type="text"
-                  id="verify-college"
-                  placeholder="e.g. National Institute of Technology"
-                  className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Upload Valid Student ID Card (JPG, PNG, or PDF — Max 5MB)
-                </label>
-                <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center bg-slate-50">
-                  <Upload className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
-                  <input
-                    type="file"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        setStudent(prev => ({ ...prev, idDocumentName: e.target.files![0].name }));
-                        showToast('Student ID file selected successfully.', 'info');
-                      }
-                    }}
-                    className="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-2">
-                    Encrypted upload • Accessible only to authorized verification administrators
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    const collegeInput = (document.getElementById('verify-college') as HTMLInputElement)?.value;
-                    setStudent((prev) => ({
-                      ...prev,
-                      collegeName: collegeInput || 'Verified Institute',
-                      authState: 'verification_pending'
-                    }));
-                    showToast('Student ID submitted successfully! Status: Verification Pending.', 'info');
-                    navigate('dashboard');
-                  }}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
-                >
-                  Submit for Verification
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <StudentVerificationPage
+          accessToken={student.accessToken}
+          onLogin={() => navigate('login')}
+          onContinue={() => navigate('dashboard')}
+          onSessionExpired={handleStudentSessionExpired}
+          onApproved={handleStudentApproved}
+        />
       );
     }
 
     return (
       <div className="max-w-md mx-auto py-12 px-4">
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (studentOtpRequested) void verifyStudentOtp(mode);
+            else void requestStudentOtp(mode);
+          }}
+          className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5"
+        >
           <div>
             <h1 className="text-xl font-bold text-slate-900">
               {mode === 'login' ? 'Student Login' : 'Create Student Account'}
             </h1>
             <p className="text-xs text-slate-600 mt-1">
               {mode === 'login'
-                ? 'Sign in with your registered credentials.'
-                : 'Register your student profile. Mandatory ID verification is required in the next step.'}
+                ? 'Sign in with a one-time code sent to your registered phone.'
+                : 'Create your student profile, then submit your student ID for verification.'}
             </p>
           </div>
 
           {mode === 'signup' && (
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Full Name</label>
+            <>
+              <label className="block text-xs font-bold text-slate-700">Full Name
               <input
                 type="text"
-                id="signup-name"
+                required
+                minLength={2}
+                maxLength={255}
+                value={studentSignupName}
+                onChange={(event) => setStudentSignupName(event.target.value)}
                 placeholder="e.g. Rahul Kumar"
-                className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal"
               />
-            </div>
+              </label>
+              <label className="block text-xs font-bold text-slate-700">College / University
+                <input required minLength={2} maxLength={255} value={studentSignupCollege} onChange={(event) => setStudentSignupCollege(event.target.value)} placeholder="Your institute" className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal" />
+              </label>
+              <label className="block text-xs font-bold text-slate-700">Course / Department
+                <input required minLength={2} maxLength={255} value={studentSignupCourse} onChange={(event) => setStudentSignupCourse(event.target.value)} placeholder="e.g. B.Tech Computer Science" className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal" />
+              </label>
+            </>
           )}
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Email Address / Mobile Number</label>
+          <label className="block text-xs font-bold text-slate-700">
+            {mode === 'login' ? 'Registered phone number' : 'Email address or phone number'}
             <input
               type="text"
-              id="auth-email"
-              placeholder="e.g. student@university.ac.in"
-              className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg"
+              required
+              value={studentContact}
+              onChange={(event) => setStudentContact(event.target.value)}
+              placeholder={mode === 'login' ? '+91 98765 43210' : 'student@example.com'}
+              disabled={studentOtpRequested}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal"
             />
-          </div>
+          </label>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Password</label>
+          {studentOtpRequested && (
+            <label className="block text-xs font-bold text-slate-700">One-time code
             <input
-              type="password"
-              placeholder="Enter secure password"
-              className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg"
+              required
+              minLength={4}
+              maxLength={12}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={studentOtp}
+              onChange={(event) => setStudentOtp(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal"
             />
-          </div>
+            </label>
+          )}
 
-          <button
-            onClick={() => {
-              const nameInput = (document.getElementById('signup-name') as HTMLInputElement)?.value;
-              const emailInput = (document.getElementById('auth-email') as HTMLInputElement)?.value;
-              
-              if (mode === 'signup' && !nameInput) {
-                showToast('Please enter your full name.', 'error');
-                return;
-              }
+          {studentAuthMessage && <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{studentAuthMessage}</p>}
 
-              setStudent({
-                ...student,
-                fullName: nameInput || 'Registered Student',
-                email: emailInput || 'student@domain.com',
-                authState: mode === 'signup' ? 'verification_pending' : 'verified',
-                role: 'student'
-              });
-
-              if (mode === 'signup') {
-                showToast('Account registered! Please upload your Student ID to complete verification.', 'info');
-                navigate('verification');
-              } else {
-                showToast('Logged in successfully!', 'success');
-                navigate('dashboard');
-              }
-            }}
-            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl"
-          >
-            {mode === 'signup' ? 'Register & Continue to ID Verification' : 'Sign In'}
+          <button type="submit" disabled={studentAuthLoading} className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60">
+            {studentAuthLoading ? 'Please wait…' : studentOtpRequested ? 'Verify code' : mode === 'signup' ? 'Create account & request code' : 'Request sign-in code'}
           </button>
-
-          {/* Quick Demo Admin Login Switcher */}
-          <div className="pt-3 border-t border-slate-100 text-center">
-            <button
-              onClick={() => {
-                setStudent({
-                  ...student,
-                  fullName: 'Administrator',
-                  authState: 'verified',
-                  role: 'admin'
-                });
-                showToast('Logged in as Administrator!', 'success');
-                navigate('admin');
-              }}
-              className="text-xs font-bold text-indigo-600 hover:underline"
-            >
-              [Demo] Log in as Admin Account
+          {studentOtpRequested && <button type="button" disabled={studentAuthLoading} onClick={() => { setStudentOtpRequested(false); setStudentOtp(''); setStudentAuthMessage(''); }} className="w-full text-xs font-semibold text-slate-500 hover:text-indigo-700">Change contact details</button>}
+          <p className="text-center text-xs text-slate-500">
+            {mode === 'login' ? 'New student?' : 'Already registered?'}{' '}
+            <button type="button" onClick={() => { setStudentOtpRequested(false); setStudentOtp(''); setStudentAuthMessage(''); navigate(mode === 'login' ? 'signup' : 'login'); }} className="font-semibold text-indigo-700 hover:underline">
+              {mode === 'login' ? 'Create an account' : 'Sign in'}
             </button>
-          </div>
-        </div>
+          </p>
+        </form>
       </div>
     );
   };
 
+  const renderAdminLoginPage = () => (
+    <div className="max-w-md mx-auto py-12 px-4">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+        <div>
+          <span className="text-xs font-mono uppercase text-indigo-600">Restricted access</span>
+          <h1 className="text-xl font-bold text-slate-900 mt-1">Admin Login</h1>
+          <p className="text-xs text-slate-600 mt-1">Sign in with your administrator account.</p>
+        </div>
+
+        <form onSubmit={handleAdminLogin} className="space-y-4">
+          <div>
+            <label htmlFor="admin-user-id" className="block text-xs font-bold text-slate-700 mb-1">Admin User ID</label>
+            <input
+              id="admin-user-id"
+              type="text"
+              autoComplete="username"
+              value={adminUserId}
+              onChange={(event) => {
+                setAdminUserId(event.target.value);
+                setAdminLoginMessage('');
+              }}
+              className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="admin-password" className="block text-xs font-bold text-slate-700 mb-1">Password</label>
+            <div className="relative">
+              <input
+                id="admin-password"
+                type={showAdminPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={adminPassword}
+                onChange={(event) => {
+                  setAdminPassword(event.target.value);
+                  setAdminLoginMessage('');
+                }}
+                className="w-full px-3.5 py-2 pr-11 text-sm border border-slate-300 rounded-lg"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdminPassword((visible) => !visible)}
+                aria-label={showAdminPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showAdminPassword}
+                className="absolute inset-y-0 right-0 px-3 text-slate-500 hover:text-slate-800"
+              >
+                {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {adminLoginMessage && (
+            <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {adminLoginMessage}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={adminSubmitting}
+            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold rounded-xl"
+          >
+            {adminSubmitting ? 'Signing in...' : 'Login'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+
+  const renderAdminChangePasswordPage = () => (
+    <div className="max-w-md mx-auto py-12 px-4">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+        <div>
+          <span className="text-xs font-mono uppercase text-indigo-600">Account security</span>
+          <h1 className="text-xl font-bold text-slate-900 mt-1">Change your initial password</h1>
+          <p className="text-xs text-slate-600 mt-1">Set a new password before opening the Admin Dashboard.</p>
+        </div>
+        <form onSubmit={handleAdminPasswordChange} className="space-y-4">
+          <div>
+            <label htmlFor="admin-new-password" className="block text-xs font-bold text-slate-700 mb-1">New password</label>
+            <div className="relative">
+              <input
+                id="admin-new-password"
+                type={showNewAdminPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={newAdminPassword}
+                onChange={(event) => {
+                  setNewAdminPassword(event.target.value);
+                  setAdminPasswordMessage('');
+                }}
+                className="w-full px-3.5 py-2 pr-11 text-sm border border-slate-300 rounded-lg"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewAdminPassword((visible) => !visible)}
+                aria-label={showNewAdminPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showNewAdminPassword}
+                className="absolute inset-y-0 right-0 px-3 text-slate-500 hover:text-slate-800"
+              >
+                {showNewAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="admin-confirm-password" className="block text-xs font-bold text-slate-700 mb-1">Confirm new password</label>
+            <input
+              id="admin-confirm-password"
+              type={showNewAdminPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={confirmAdminPassword}
+              onChange={(event) => {
+                setConfirmAdminPassword(event.target.value);
+                setAdminPasswordMessage('');
+              }}
+              className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg"
+            />
+          </div>
+          {adminPasswordMessage && (
+            <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {adminPasswordMessage}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={adminSubmitting}
+            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold rounded-xl"
+          >
+            {adminSubmitting ? 'Updating password...' : 'Set password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+
   const renderSelectedAndMeetPage = () => {
+    if (currentRoute === 'selected-projects' || currentRoute === 'schedule-meet') {
+      return (
+        <StudentCommercePanel
+          view={currentRoute === 'selected-projects' ? 'selected' : 'meetings'}
+          accessToken={student.accessToken}
+          projects={projects}
+          viewedProjectIds={student.viewedProjectIds}
+          onSelectionChange={handleStudentSelectionsLoaded}
+          onToggleSelection={handleToggleSelectProject}
+          onSessionExpired={handleStudentSessionExpired}
+          onLogin={() => navigate('login')}
+        />
+      );
+    }
+
     const viewedProjects = projects.filter((p) => student.viewedProjectIds.includes(p.id));
     const selectedProjects = projects.filter((p) => student.selectedProjectIds.includes(p.id));
 
@@ -1316,7 +1798,7 @@ export default function App() {
                 { id: 'overview', label: 'Profile & Preview Stats', icon: <UserCheck className="w-4 h-4" /> },
                 { id: 'activity', label: 'Project Activity', icon: <Layers className="w-4 h-4" /> },
                 { id: 'meetings', label: 'Meeting Dashboard', icon: <Calendar className="w-4 h-4" /> },
-                { id: 'referrals', label: 'Referral & 20% Rewards', icon: <Award className="w-4 h-4" /> },
+                { id: 'referrals', label: 'Referral Rewards', icon: <Award className="w-4 h-4" /> },
                 { id: 'purchases', label: 'My Purchases & Files', icon: <CreditCard className="w-4 h-4" /> },
                 { id: 'support', label: 'Customer Support', icon: <HelpCircle className="w-4 h-4" /> },
               ].map((tab) => (
@@ -1337,11 +1819,23 @@ export default function App() {
 
           <div className="pt-6 border-t border-white/10 mt-6">
             <button
-              onClick={() => {
+              onClick={async () => {
+                let sessionRevoked = !student.accessToken;
+                if (student.accessToken) {
+                  try {
+                    await StudentAuthAPI.logout(student.accessToken);
+                    sessionRevoked = true;
+                  } catch (error) {
+                    showToast(
+                      error instanceof Error ? `Unable to revoke session: ${error.message}` : 'Unable to revoke the student session.',
+                      'error'
+                    );
+                  }
+                }
                 setStudent({ ...INITIAL_STUDENT, authState: 'logged_out' });
                 localStorage.removeItem('cpm_student_session');
                 navigate('login');
-                showToast('Logged out successfully.', 'info');
+                if (sessionRevoked) showToast('Logged out successfully.', 'info');
               }}
               className="w-full flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-300 hover:bg-rose-500/10"
             >
@@ -1372,13 +1866,6 @@ export default function App() {
                 {meetings.length} / 3 Booked
               </div>
               <div className="text-[11px] text-emerald-600 font-medium mt-1">5 mins per session</div>
-            </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200">
-              <div className="text-xs text-slate-500">Approved Referral Balance</div>
-              <div className="text-xl font-extrabold text-emerald-600 mt-1">
-                ₹{student.availableRewardBalance}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">20% per eligible referral</div>
             </div>
           </div>
 
@@ -1481,64 +1968,25 @@ export default function App() {
           )}
 
           {dashboardTab === 'meetings' && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-slate-900">Google Meet Guidance Sessions</h3>
-                <button
-                  onClick={() => navigate('schedule-meet')}
-                  className="px-3.5 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg"
-                >
-                  Schedule New 5-Min Meet
-                </button>
-              </div>
-              {meetings.map((m) => (
-                <div key={m.id} className="p-4 rounded-xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-sm text-slate-900">{m.projectTitle}</div>
-                    <div className="text-xs text-slate-600">{m.date} • {m.timeSlot} ({m.durationMinutes} mins)</div>
-                  </div>
-                  <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
-                    {m.status}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <StudentCommercePanel
+              view="meetings"
+              accessToken={student.accessToken}
+              projects={projects}
+              onSessionExpired={handleStudentSessionExpired}
+              onLogin={() => navigate('login')}
+            />
           )}
 
           {dashboardTab === 'referrals' && renderReferralSection()}
 
           {dashboardTab === 'purchases' && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
-              <h3 className="text-lg font-bold text-slate-900">My Purchased Projects & Authorized Deliverables</h3>
-              {orders.map((ord) => (
-                <div key={ord.orderId} className="p-4 rounded-xl border border-slate-200 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <span className="text-xs font-mono text-slate-500">{ord.orderId} • {ord.purchaseDate}</span>
-                      <h4 className="font-bold text-slate-900 text-base">{ord.projectTitle}</h4>
-                    </div>
-                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
-                      {ord.paymentStatus} (₹{ord.amountPaid})
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {ord.deliverables.map((d) => (
-                      <span key={d} className="px-2.5 py-1 bg-slate-100 text-slate-700 text-xs rounded-md">
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                  {ord.downloadAuthorized && (
-                    <button
-                      onClick={() => showToast('Authorized package download started.', 'success')}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg"
-                    >
-                      Download Complete Project Bundle (.ZIP)
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <StudentCommercePanel
+              view="orders"
+              accessToken={student.accessToken}
+              projects={projects}
+              onSessionExpired={handleStudentSessionExpired}
+              onLogin={() => navigate('login')}
+            />
           )}
 
           {dashboardTab === 'support' && renderSupportSection()}
@@ -1548,138 +1996,51 @@ export default function App() {
   );
 
   const renderReferralSection = () => (
-    <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-6">
-      <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-6 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full">
-            20% Referral Reward Program
-          </span>
-          <h3 className="text-xl font-bold">Refer Classmates & Earn 20% of Eligible Purchases</h3>
-          <p className="text-xs text-slate-300 max-w-xl">
-            Example: On an eligible ₹1,000 project purchase by your friend, you receive ₹200 after backend order verification.
-          </p>
-        </div>
-        <div className="bg-white/10 p-4 rounded-xl border border-white/15 shrink-0 space-y-2">
-          <div className="text-[11px] text-indigo-200 uppercase font-mono">Your Referral Code: {student.referralCode}</div>
-          <div className="flex items-center gap-2">
-            <input
-              readOnly
-              value={student.referralLink}
-              className="bg-slate-950/80 text-white text-xs font-mono px-3 py-2 rounded-lg border border-white/10 w-56"
-            />
-            <button
-              onClick={() => {
-                navigator.clipboard?.writeText(student.referralLink);
-                showToast('Referral link copied to clipboard!', 'success');
-              }}
-              className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold rounded-lg flex items-center gap-1"
-            >
-              <Copy className="w-3.5 h-3.5" /> Copy
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* MODIFIED: Receive Payment UI Flow (UPI Linking) */}
-      <div className="border border-slate-200 rounded-xl p-5">
-        <h4 className="font-bold text-sm text-slate-900 mb-2">Payout Method (Receive Rewards)</h4>
-        {upiLinked ? (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-            <div>
-              <div className="text-xs text-emerald-800 font-semibold">Linked UPI ID / Phone No.</div>
-              <div className="font-mono text-sm font-bold text-emerald-900 mt-0.5">{upiLinked}</div>
-            </div>
-            <CheckCircle2 className="w-6 h-6 text-emerald-600" />
-          </div>
-        ) : (
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
-            <p className="text-xs text-slate-600">Link your UPI ID or Phone Number to receive referral payouts directly to your bank account.</p>
-            {!showUpiOtp ? (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter UPI ID or Phone Number"
-                  value={upiInput}
-                  onChange={(e) => setUpiInput(e.target.value)}
-                  className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg"
-                />
-                <button
-                  onClick={() => {
-                    if (!upiInput) return showToast('Please enter a valid UPI ID or Phone No.', 'error');
-                    setShowUpiOtp(true);
-                    showToast('OTP sent to your registered mobile/email for linking.', 'info');
-                  }}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  Send OTP
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter 4-digit OTP"
-                  maxLength={4}
-                  className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg font-mono tracking-widest"
-                />
-                <button
-                  onClick={() => {
-                    setUpiLinked(upiInput);
-                    localStorage.setItem('cpm_upi_id', upiInput);
-                    setShowUpiOtp(false);
-                    showToast('Payment method linked successfully!', 'success');
-                  }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors"
-                >
-                  Verify & Link
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <h4 className="font-bold text-sm text-slate-900 mb-3">Authoritative Referral & Reward History</h4>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500 bg-slate-50">
-                <th className="py-2.5 px-3">Student</th>
-                <th className="py-2.5 px-3">College</th>
-                <th className="py-2.5 px-3">Date</th>
-                <th className="py-2.5 px-3">Purchase Amount</th>
-                <th className="py-2.5 px-3">Authoritative Reward (20%)</th>
-                <th className="py-2.5 px-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {referrals.map((r) => (
-                <tr key={r.id}>
-                  <td className="py-3 px-3 font-bold text-slate-900">{r.referredStudentName}</td>
-                  <td className="py-3 px-3 text-slate-600">{r.college}</td>
-                  <td className="py-3 px-3 text-slate-500">{r.date}</td>
-                  <td className="py-3 px-3 font-mono">₹{r.purchaseAmount}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-emerald-700">₹{r.rewardAmount}</td>
-                  <td className="py-3 px-3">
-                    <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
-                      r.status === 'Reward Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {r.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    <StudentReferralPage
+      accessToken={student.accessToken}
+      onSessionExpired={handleStudentSessionExpired}
+      onLogin={() => navigate('login')}
+    />
   );
 
   const renderCheckoutPage = () => {
-    const discount = applyReferralBalance ? Math.min(student.availableRewardBalance, 300) : 0;
-    const finalPayable = Math.max(0, checkoutProject.price - discount);
+    if (checkoutProject.availability === 'SOLD_OUT') {
+      return (
+        <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+          <Lock className="mx-auto h-10 w-10 text-slate-400" />
+          <h1 className="mt-4 text-xl font-bold text-slate-900">Project Sold Out</h1>
+          <p className="mt-2 text-sm text-slate-600">This project is no longer available for new purchases.</p>
+          <button onClick={() => navigate('explore')} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Back to Catalogue</button>
+        </div>
+      );
+    }
+    const finalPayable = checkoutProject.price;
+
+    const createPendingOrder = async () => {
+      if (!student.accessToken) {
+        navigate('login');
+        return;
+      }
+      const projectId = Number(checkoutProject.id);
+      if (!Number.isSafeInteger(projectId) || projectId < 1) {
+        showToast('This catalogue project cannot be purchased through the backend.', 'error');
+        return;
+      }
+      setOrderSubmitting(true);
+      try {
+        const order = await StudentCommerceAPI.createOrder(student.accessToken, projectId);
+        setCheckoutOrder(order);
+        showToast('Order created. The backend returned its current order and payment statuses.', 'info');
+      } catch (error) {
+        if (error instanceof VerificationApiError && [401, 403].includes(error.status)) {
+          handleStudentSessionExpired();
+        } else {
+          showToast(error instanceof Error ? error.message : 'Unable to create the order.', 'error');
+        }
+      } finally {
+        setOrderSubmitting(false);
+      }
+    };
 
     return (
       <div className="max-w-3xl mx-auto py-10 px-4">
@@ -1702,25 +2063,14 @@ export default function App() {
 
           <div className="space-y-3 text-sm border-t border-b border-slate-200 py-4">
             <div className="flex justify-between">
-              <span className="text-slate-600">Project Base Price (Authoritative):</span>
+              <span className="text-slate-600">Catalogue price:</span>
               <span className="font-bold text-slate-900">₹{checkoutProject.price}</span>
             </div>
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={applyReferralBalance}
-                  onChange={(e) => setApplyReferralBalance(e.target.checked)}
-                  className="rounded text-indigo-600"
-                />
-                Apply Referral Reward Discount (Available: ₹{student.availableRewardBalance})
-              </label>
-              <span className="font-bold text-emerald-600">- ₹{discount}</span>
-            </div>
             <div className="flex justify-between text-base font-extrabold text-slate-900 pt-2 border-t border-slate-100">
-              <span>Final Payable Amount:</span>
-              <span>₹{finalPayable}</span>
+              <span>{checkoutOrder ? 'Order amount (confirmed by backend):' : 'Estimated order amount:'}</span>
+              <span>₹{checkoutOrder?.amount ?? finalPayable}</span>
             </div>
+            <p className="text-xs text-slate-500">Reward balances do not alter this order. A payment gateway must confirm payment separately.</p>
           </div>
 
           <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
@@ -1735,46 +2085,30 @@ export default function App() {
             </span>
           </label>
 
-          {paymentState === 'Payment Successful' ? (
-            <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
-              <div className="flex items-center gap-2 text-emerald-800 font-bold text-base">
-                <CheckCircle2 className="w-5 h-5" /> Order Confirmed! Payment Successful
+          {checkoutOrder ? (
+            <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+              <div className="flex items-center gap-2 text-amber-900 font-bold text-base">
+                <CheckCircle2 className="w-5 h-5" /> Order #{checkoutOrder.id} created · Order {checkoutOrder.status.toLowerCase()} · Payment {checkoutOrder.payment_status?.toLowerCase().replace(/_/g, ' ') || 'not recorded'}
               </div>
-              <p className="text-xs text-emerald-900">
-                Your deliverables have been unlocked in your Student Dashboard under "My Purchases".
-              </p>
+              <p className="text-xs text-amber-900">The order and payment statuses above came from the backend. Payment changes only after a verified gateway event.</p>
               <button
                 onClick={() => {
                   setDashboardTab('purchases');
                   navigate('dashboard');
                 }}
-                className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg"
+                className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg"
               >
-                View My Purchases
+                View My Orders
               </button>
             </div>
           ) : (
             <div className="flex flex-wrap gap-3">
               <button
-                disabled={!acceptedTerms}
-                onClick={() => {
-                  const newOrder: OrderRecord = {
-                    orderId: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-                    projectId: checkoutProject.id,
-                    projectTitle: checkoutProject.title,
-                    purchaseDate: '26 Oct 2026',
-                    amountPaid: finalPayable,
-                    paymentStatus: 'Payment Successful',
-                    deliverables: checkoutProject.deliverables,
-                    downloadAuthorized: true,
-                  };
-                  setOrders((prev) => [newOrder, ...prev]);
-                  setPaymentState('Payment Successful');
-                  showToast('Payment verified! Order added to My Purchases.', 'success');
-                }}
+                disabled={!acceptedTerms || orderSubmitting}
+                onClick={() => void createPendingOrder()}
                 className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-bold rounded-xl"
               >
-                Proceed to Payment (₹{finalPayable})
+                {orderSubmitting ? 'Creating order…' : `Create Pending Order (₹${finalPayable})`}
               </button>
             </div>
           )}
@@ -1863,201 +2197,15 @@ export default function App() {
   );
 
   const renderAdminPanel = () => {
-    if (student.role !== 'admin') {
-      return (
-        <div className="max-w-xl mx-auto py-16 px-4 text-center">
-          <div className="bg-white p-8 rounded-2xl border border-rose-200 shadow-sm space-y-4">
-            <Ban className="w-12 h-12 text-rose-600 mx-auto" />
-            <h1 className="text-xl font-bold text-slate-900">Restricted Administrator Area</h1>
-            <p className="text-xs text-slate-600">
-              You are currently logged in as a student. To access the admin panel, please log out and sign in using an administrator account.
-            </p>
-            <button
-              onClick={() => navigate('login')}
-              className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg"
-            >
-              Go to Login
-            </button>
-          </div>
-        </div>
-      );
-    }
+    if (!adminSession) return renderAdminLoginPage();
+    if (adminSession.mustChangePassword) return renderAdminChangePasswordPage();
 
     return (
-      <div className="max-w-7xl mx-auto py-8 px-4 space-y-6">
-        <div className="bg-slate-900 text-white p-6 rounded-2xl flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <span className="text-xs font-mono text-emerald-400 uppercase">Role-Protected Admin Console</span>
-            <h1 className="text-2xl font-bold">Marketplace Administration & Verification</h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'overview', label: 'Overview KPIs' },
-              { id: 'projects', label: 'Project Management' },
-              { id: 'verifications', label: 'Student ID Verification' },
-              { id: 'meetings', label: 'Meeting Slots' },
-              { id: 'orders', label: 'Orders' },
-              { id: 'referrals', label: 'Referrals' },
-            ].map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setAdminTab(t.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                  adminTab === t.id ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-300 hover:bg-white/20'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-xl border border-slate-200">
-            <div className="text-xs text-slate-500">Total Registered Students</div>
-            <div className="text-2xl font-extrabold text-slate-900 mt-1">1,420</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200">
-            <div className="text-xs text-slate-500">Pending ID Verifications</div>
-            <div className="text-2xl font-extrabold text-amber-600 mt-1">14</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200">
-            <div className="text-xs text-slate-500">Total Listed Projects</div>
-            <div className="text-2xl font-extrabold text-indigo-600 mt-1">{projects.length}</div>
-          </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200">
-            <div className="text-xs text-slate-500">Scheduled 5-Min Meetings</div>
-            <div className="text-2xl font-extrabold text-emerald-600 mt-1">{meetings.length}</div>
-          </div>
-        </div>
-{adminTab === 'verifications' && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
-            <h2 className="text-lg font-bold text-slate-900">Student ID Verification Queue (Restricted Admin Access)</h2>
-            <p className="text-xs text-slate-500 mb-4">
-              Here the admin can securely view submitted ID cards of registered students and verify them.
-            </p>
-            
-            {/* Dummy List of Pending Students to show to Client */}
-            <div className="space-y-3">
-              {[
-                { id: 'STU-1029', name: 'Rahul Kumar', college: 'National Institute of Technology', idFront: 'rahul_id_front.jpg', idBack: 'rahul_id_back.jpg' },
-                { id: 'STU-1030', name: 'Priya Singh', college: 'St. Xavier\'s College', idFront: 'priya_college_id.pdf', idBack: null },
-                { id: 'STU-1031', name: 'Aman Verma', college: 'BIT Mesra', idFront: 'aman_id_2026.png', idBack: 'aman_id_back.png' }
-              ].map((pendingStudent) => (
-                <div key={pendingStudent.id} className="p-4 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50">
-                  <div>
-                    <div className="font-bold text-sm text-slate-900">{pendingStudent.name} <span className="text-xs font-mono text-slate-500 font-normal">({pendingStudent.id})</span></div>
-                    <div className="text-xs text-slate-600 mt-1">{pendingStudent.college}</div>
-                    <div className="flex gap-2 mt-2">
-                       <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1">
-                         <FileText className="w-3 h-3" /> {pendingStudent.idFront}
-                       </span>
-                       {pendingStudent.idBack && (
-                         <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1">
-                           <FileText className="w-3 h-3" /> {pendingStudent.idBack}
-                         </span>
-                       )}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => showToast(`Approved ID for ${pendingStudent.name}. They can now access PPTs.`, 'success')}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => showToast(`Rejected ID for ${pendingStudent.name}.`, 'error')}
-                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {adminTab === 'projects' && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-900">Manage Catalogue Projects</h2>
-              <button
-                onClick={() => {
-                  const newProj: ProjectDTO = {
-                    ...projects[0],
-                    id: `PRJ-${100 + projects.length + 1}`,
-                    title: 'Cloud Microservices E-Learning Portal',
-                    category: 'Cloud Computing',
-                    price: 1699,
-                  };
-                  setProjects((prev) => [newProj, ...prev]);
-                  showToast('New project added to catalogue!', 'success');
-                }}
-                className="px-3.5 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg flex items-center gap-1"
-              >
-                <PlusCircle className="w-4 h-4" /> Add Sample Project
-              </button>
-            </div>
-            <div className="divide-y divide-slate-200 text-xs">
-              {projects.map((p) => (
-                <div key={p.id} className="py-3 flex items-center justify-between">
-                  <div>
-                    <span className="font-mono text-slate-500 mr-2">{p.id}</span>
-                    <strong className="text-slate-900">{p.title}</strong>
-                    <span className="ml-2 text-slate-500">({p.category} • ₹{p.price})</span>
-                  </div>
-                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">Active</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {(adminTab === 'overview' || adminTab === 'meetings' || adminTab === 'orders' || adminTab === 'referrals') && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
-            <h2 className="text-base font-bold text-slate-900">Active Meeting & Order Operations</h2>
-            <div className="space-y-2 text-xs">
-              {meetings.map((m) => (
-                <div key={m.id} className="p-3 rounded-lg border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <strong>{m.projectTitle}</strong> — {m.date} ({m.timeSlot}) • Status: <span className="font-bold text-indigo-600">{m.status}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setMeetings((prev) =>
-                          prev.map((item) =>
-                            item.id === m.id
-                              ? { ...item, status: 'Scheduled', meetLink: 'https://meet.google.com/new-slot-xyz' }
-                              : item
-                          )
-                        );
-                        showToast('Meeting confirmed & Google Meet link attached.', 'success');
-                      }}
-                      className="px-2.5 py-1 bg-emerald-600 text-white rounded font-bold"
-                    >
-                      Approve & Attach Meet Link
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMeetings((prev) =>
-                          prev.map((item) => (item.id === m.id ? { ...item, status: 'Completed' } : item))
-                        );
-                        showToast('Meeting marked Completed.', 'info');
-                      }}
-                      className="px-2.5 py-1 bg-slate-800 text-white rounded font-bold"
-                    >
-                      Mark Completed
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <AdminDashboard
+        accessToken={adminSession.accessToken}
+        onLogout={handleAdminLogout}
+        onSessionExpired={handleAdminSessionExpired}
+      />
     );
   };
 
@@ -2084,7 +2232,7 @@ export default function App() {
             <>
               <p><strong>1. Preview Usage Limits:</strong> Verified students receive 5 watermarked PPT preview credits per 90-day cycle.</p>
               <p><strong>2. Meeting Rules:</strong> Students may shortlist up to 3 previewed projects and book up to three 5-minute scheduled Google Meet guidance sessions.</p>
-              <p><strong>3. Referral Rewards:</strong> Eligible successful referrals earn a 20% reward credited upon backend verification of a completed order.</p>
+              <p><strong>3. Referral Rewards:</strong> Eligible successful referrals earn an authenticated backend reward after a qualifying paid purchase is confirmed.</p>
             </>
           )}
           {type === 'refund' && (
@@ -2108,7 +2256,7 @@ export default function App() {
       )}
 
       {/* Feature Sidebar Drawer (Collapsible Feature Panel) */}
-      {sidebarOpen && (
+      {currentRoute !== 'admin' && sidebarOpen && (
         <div className="fixed inset-0 z-50 flex">
           {/* Backdrop */}
           <div
@@ -2171,19 +2319,13 @@ export default function App() {
                   onClick={() => navigate('referrals')}
                   className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
                 >
-                  <Award className="w-4 h-4 text-rose-400" /> 20% Referral & Reward Hub
+                  <Award className="w-4 h-4 text-rose-400" /> Referral & Reward Hub
                 </button>
                 <button
                   onClick={() => navigate('support')}
                   className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
                 >
                   <HelpCircle className="w-4 h-4 text-sky-400" /> Customer Support Desk
-                </button>
-                <button
-                  onClick={() => navigate('admin')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 transition-colors"
-                >
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" /> Admin Panel & Verifications
                 </button>
               </nav>
             </div>
@@ -2196,7 +2338,7 @@ export default function App() {
       )}
 
       {/* A. Navigation Bar */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+      <header className={currentRoute === 'admin' ? 'hidden' : 'bg-white border-b border-slate-200 sticky top-0 z-40'}>
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {/* Sidebar Toggle Button */}
@@ -2303,6 +2445,10 @@ export default function App() {
         {currentRoute === 'how-it-works' && renderHomePage()}
         {currentRoute === 'login' && renderAuthAndVerificationPage('login')}
         {currentRoute === 'signup' && renderAuthAndVerificationPage('signup')}
+        {currentRoute === 'admin-login' && renderAdminLoginPage()}
+        {currentRoute === 'admin-change-password' && (
+          adminSession?.mustChangePassword ? renderAdminChangePasswordPage() : renderAdminLoginPage()
+        )}
         {currentRoute === 'verification' && renderAuthAndVerificationPage('verification')}
         {(currentRoute === 'selected-projects' || currentRoute === 'schedule-meet') && renderSelectedAndMeetPage()}
         {currentRoute === 'dashboard' && renderStudentDashboard()}
@@ -2318,7 +2464,7 @@ export default function App() {
       </main>
 
       {/* G. Footer */}
-      <footer className="bg-slate-900 text-slate-400 py-10 px-4 border-t border-slate-800 mt-16">
+      <footer className={currentRoute === 'admin' ? 'hidden' : 'bg-slate-900 text-slate-400 py-10 px-4 border-t border-slate-800 mt-16'}>
         <div className="max-w-7xl mx-auto grid sm:grid-cols-2 lg:grid-cols-4 gap-8 text-xs">
           <div className="space-y-2">
             <div className="font-extrabold text-white text-base">CampusProjects</div>
@@ -2332,7 +2478,7 @@ export default function App() {
               <li><button onClick={() => navigate('explore')} className="hover:text-white">Explore Projects</button></li>
               <li><button onClick={() => navigate('verification')} className="hover:text-white">Student ID Verification</button></li>
               <li><button onClick={() => navigate('selected-projects')} className="hover:text-white">Selected Projects (Max 3)</button></li>
-              <li><button onClick={() => navigate('referrals')} className="hover:text-white">20% Referral Program</button></li>
+              <li><button onClick={() => navigate('referrals')} className="hover:text-white">Referral Program</button></li>
             </ul>
           </div>
           <div className="space-y-2">
@@ -2341,6 +2487,7 @@ export default function App() {
               <li><button onClick={() => navigate('privacy')} className="hover:text-white">Privacy Policy</button></li>
               <li><button onClick={() => navigate('terms')} className="hover:text-white">Terms & Conditions</button></li>
               <li><button onClick={() => navigate('refund')} className="hover:text-white">Refund Policy</button></li>
+              <li><button onClick={() => navigate('admin-login')} className="hover:text-white">Admin</button></li>
             </ul>
           </div>
           <div className="space-y-2">

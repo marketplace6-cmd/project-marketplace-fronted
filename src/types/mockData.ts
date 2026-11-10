@@ -1,4 +1,4 @@
-import { ProjectDTO, StudentProfile, MeetingRecord, ReferralRecord, OrderRecord, SupportTicket } from './types';
+import { ProjectDTO, StudentProfile, MeetingRecord, OrderRecord, SupportTicket } from './types';
 
 export const INITIAL_PROJECTS: ProjectDTO[] = [
   {
@@ -77,13 +77,9 @@ export const INITIAL_STUDENT: StudentProfile = {
   },
   viewedProjectIds: [],
   selectedProjectIds: [],
-  referralCode: 'CAMPUS20',
-  referralLink: 'https://campusprojects.in/ref/CAMPUS20',
-  availableRewardBalance: 0
 };
 
 export const INITIAL_MEETINGS: MeetingRecord[] = [];
-export const INITIAL_REFERRALS: ReferralRecord[] = [];
 export const INITIAL_ORDERS: OrderRecord[] = [];
 export const INITIAL_TICKETS: SupportTicket[] = [];
 

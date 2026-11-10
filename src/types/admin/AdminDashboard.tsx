@@ -10,6 +10,7 @@ import {
   ClipboardList,
   FileCheck2,
   FolderKanban,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -30,6 +31,7 @@ import AdminCatalogPage from './AdminCatalogPage';
 import AdminVerificationPage from './AdminVerificationPage';
 import AdminMeetingsOrdersPage from './AdminMeetingsOrdersPage';
 import AdminReferralPage from './AdminReferralPage';
+import AdminSecurityPage from './AdminSecurityPage';
 
 type AdminSection =
   | 'overview'
@@ -448,6 +450,15 @@ export default function AdminDashboard({ accessToken, onLogout, onSessionExpired
                       <span className="mt-1 block break-all text-[10px] text-slate-500">{summary?.admin_id || 'Loading account ID'}</span>
                     </button>
                     <button
+                      onClick={() => {
+                        setActiveSection('profile');
+                        setProfileOpen(false);
+                      }}
+                      className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <KeyRound size={14} className="text-indigo-600" /> Change password
+                    </button>
+                    <button
                       onClick={onLogout}
                       className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50"
                     >
@@ -502,6 +513,12 @@ export default function AdminDashboard({ accessToken, onLogout, onSessionExpired
             />
           ) : activeSection === 'referrals' ? (
             <AdminReferralPage
+              accessToken={accessToken}
+              onSessionExpired={onSessionExpired}
+            />
+          ) : activeSection === 'profile' ? (
+            <AdminSecurityPage
+              adminId={summary?.admin_id || '20232027'}
               accessToken={accessToken}
               onSessionExpired={onSessionExpired}
             />

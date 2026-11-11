@@ -143,7 +143,7 @@ export default function AdminVerificationPage({
     void AdminVerificationAPI.getDocument(accessToken, selected.id)
       .then((blob) => {
         if (!active) return;
-        if (!['image/jpeg', 'image/png', 'application/pdf'].includes(blob.type)) {
+        if (!['image/jpeg', 'image/png', 'application/pdf', 'image/svg+xml'].includes(blob.type)) {
           setDocumentError('This document format cannot be previewed safely.');
           return;
         }

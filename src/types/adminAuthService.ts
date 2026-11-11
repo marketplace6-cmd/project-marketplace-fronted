@@ -1,3 +1,5 @@
+import { supabase } from '../utils/supabase/client';
+
 export interface AdminTokenResponse {
   access_token: string;
   token_type: 'bearer';
@@ -266,30 +268,92 @@ export const AdminAuthAPI = {
       return parseDashboardResponse(await request('/admin/dashboard', 'GET', accessToken));
     } catch (networkError) {
       const local = getLocalAdmin();
+
+      // Real-time calculation from Supabase
+      try {
+        const [
+          projectsRes,
+          verificationsRes,
+          ordersRes,
+          meetingsRes,
+          referralsRes
+        ] = await Promise.allSettled([
+          supabase.from('projects').select('publication_status'),
+          supabase.from('verifications').select('status'),
+          supabase.from('orders').select('status'),
+          supabase.from('meetings').select('status'),
+          supabase.from('referrals').select('id')
+        ]);
+
+        const projects = projectsRes.status === 'fulfilled' && projectsRes.value.data ? projectsRes.value.data : [];
+        const verifications = verificationsRes.status === 'fulfilled' && verificationsRes.value.data ? verificationsRes.value.data : [];
+        const orders = ordersRes.status === 'fulfilled' && ordersRes.value.data ? ordersRes.value.data : [];
+        const meetings = meetingsRes.status === 'fulfilled' && meetingsRes.value.data ? meetingsRes.value.data : [];
+        const referrals = referralsRes.status === 'fulfilled' && referralsRes.value.data ? referralsRes.value.data : [];
+
+        const totalProjects = projects.length;
+        const activeProjects = projects.filter((p: any) => p.publication_status === 'PUBLISHED').length;
+        const soldOutProjects = projects.filter((p: any) => p.publication_status === 'SOLD_OUT').length;
+
+        const pendingVerifications = verifications.filter((v: any) => v.status === 'PENDING').length;
+        const verifiedStudents = verifications.filter((v: any) => v.status === 'APPROVED').length;
+        const totalStudents = verifications.length;
+
+        const totalOrders = orders.length;
+        const pendingOrders = orders.filter((o: any) => o.status === 'PENDING').length;
+        const approvedOrders = orders.filter((o: any) => o.status === 'APPROVED' || o.status === 'COMPLETED').length;
+
+        const totalMeetings = meetings.length;
+        const pendingMeetings = meetings.filter((m: any) => m.status === 'PENDING').length;
+        const approvedMeetings = meetings.filter((m: any) => m.status === 'SCHEDULED' || m.status === 'APPROVED').length;
+
+        const totalReferrals = referrals.length;
+
+        return {
+          admin_id: local.admin_id,
+          stats: {
+            total_students: totalStudents,
+            verified_students: verifiedStudents,
+            pending_verifications: pendingVerifications,
+            total_projects: totalProjects,
+            active_projects: activeProjects,
+            sold_out_projects: soldOutProjects,
+            total_orders: totalOrders,
+            pending_orders: pendingOrders,
+            approved_orders: approvedOrders,
+            total_meetings: totalMeetings,
+            pending_meetings: pendingMeetings,
+            approved_meetings: approvedMeetings,
+            total_referrals: totalReferrals,
+            eligible_rewards: 0
+          },
+          unavailable: {},
+          recent_activity: []
+        };
+      } catch {
+        /* proceed to default fallback */
+      }
+
       return {
         admin_id: local.admin_id,
         stats: {
-          total_students: 120,
-          verified_students: 84,
-          pending_verifications: 18,
-          total_projects: 42,
-          active_projects: 38,
-          sold_out_projects: 4,
-          total_orders: 56,
-          pending_orders: 6,
-          approved_orders: 50,
-          total_meetings: 32,
-          pending_meetings: 5,
-          approved_meetings: 27,
-          total_referrals: 23,
-          eligible_rewards: 8
+          total_students: 0,
+          verified_students: 0,
+          pending_verifications: 0,
+          total_projects: 0,
+          active_projects: 0,
+          sold_out_projects: 0,
+          total_orders: 0,
+          pending_orders: 0,
+          approved_orders: 0,
+          total_meetings: 0,
+          pending_meetings: 0,
+          approved_meetings: 0,
+          total_referrals: 0,
+          eligible_rewards: 0
         },
         unavailable: {},
-        recent_activity: [
-          { id: 1, action: 'Student ID verification submitted', entity: 'STU-1029', created_at: new Date().toISOString() },
-          { id: 2, action: 'New project published', entity: 'PRJ-105', created_at: new Date().toISOString() },
-          { id: 3, action: 'Guidance meeting scheduled', entity: 'MEET-401', created_at: new Date().toISOString() }
-        ]
+        recent_activity: []
       };
     }
   }

@@ -27,6 +27,7 @@ import {
   AdminDashboardStats,
   AdminDashboardSummary
 } from '../adminAuthService';
+import { supabase } from '../../utils/supabase/client';
 import AdminCatalogPage from './AdminCatalogPage';
 import AdminVerificationPage from './AdminVerificationPage';
 import AdminMeetingsOrdersPage from './AdminMeetingsOrdersPage';
@@ -378,6 +379,20 @@ export default function AdminDashboard({ accessToken, onLogout, onSessionExpired
       document.removeEventListener('visibilitychange', validateOnReturn);
     };
   }, [accessToken, onSessionExpired]);
+
+  // Real-time listener for dashboard metrics
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-dashboard-stats')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        AdminAuthAPI.getDashboard(accessToken).then((result) => setSummary(result)).catch(() => {});
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [accessToken]);
 
   const retryDashboard = () => {
     setLoading(true);

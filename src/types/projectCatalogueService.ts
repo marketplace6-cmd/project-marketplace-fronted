@@ -35,36 +35,36 @@ function splitList(value: unknown): string[] {
 }
 
 function mapProject(value: unknown): ProjectDTO {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== 'number' ||
-    typeof value.project_code !== 'string' ||
-    typeof value.title !== 'string' ||
-    typeof value.category !== 'string' ||
-    typeof value.project_type !== 'string' ||
-    typeof value.short_description !== 'string' ||
-    typeof value.difficulty !== 'string' ||
-    typeof value.price !== 'number' ||
-    typeof value.publication_status !== 'string'
-  ) {
+  if (!isRecord(value)) {
     throw new ProjectCatalogueError('Catalogue service returned an invalid project.');
   }
-  const soldOut = value.publication_status === 'SOLD_OUT';
+  const id = String(value.id || Math.random());
+  const projectCode = typeof value.project_code === 'string' ? value.project_code : `PRJ-${id}`;
+  const title = typeof value.title === 'string' ? value.title : 'Untitled Project';
+  const topicName = typeof value.topic_name === 'string' ? value.topic_name : title;
+  const category = typeof value.category === 'string' ? value.category : 'General';
+  const projectType = typeof value.project_type === 'string' ? value.project_type : 'Web Application';
+  const shortDescription = typeof value.short_description === 'string' ? value.short_description : '';
+  const price = typeof value.price === 'number' ? value.price : Number(value.price) || 0;
+  const publicationStatus = typeof value.publication_status === 'string' ? value.publication_status : 'PUBLISHED';
+
+  const soldOut = publicationStatus === 'SOLD_OUT';
   const hasPpt = value.has_ppt === true;
+  const rawDiff = String(value.difficulty).toUpperCase();
   const difficulty: ProjectDTO['difficulty'] =
-    value.difficulty === 'BEGINNER'
+    rawDiff === 'BEGINNER'
       ? 'Beginner'
-      : value.difficulty === 'ADVANCED'
+      : rawDiff === 'ADVANCED'
         ? 'Advanced'
         : 'Intermediate';
   return {
-    id: String(value.id),
-    projectCode: value.project_code,
-    topicName: typeof value.topic_name === 'string' ? value.topic_name : value.title,
-    title: value.title,
-    category: value.category,
-    projectType: value.project_type,
-    shortDescription: value.short_description,
+    id,
+    projectCode,
+    topicName,
+    title,
+    category,
+    projectType,
+    shortDescription,
     problemStatement: typeof value.problem_statement === 'string' ? value.problem_statement : '',
     technologies: splitList(value.technology_stack),
     difficulty,
@@ -74,7 +74,7 @@ function mapProject(value: unknown): ProjectDTO {
     previewEligible: hasPpt && !soldOut,
     hasPpt,
     availability: soldOut ? 'SOLD_OUT' : 'ACTIVE',
-    price: value.price,
+    price,
     genericPatternTheme: 'from-indigo-600 via-blue-600 to-cyan-500',
     pptSlides: []
   };
@@ -88,31 +88,37 @@ export async function getPublicProjects(): Promise<ProjectDTO[]> {
       return data.map(mapProject);
     }
   } catch {
-    /* fallback to API or mock */
+    /* fallback */
   }
 
-  if (useMockCatalogue) return INITIAL_PROJECTS;
-
-  const projects: ProjectDTO[] = [];
-  let page = 1;
-  while (true) {
-    const response = await fetch(`${API_BASE_URL}/projects?page=${page}&page_size=100`);
-    if (!response.ok) {
-      throw new ProjectCatalogueError(`Unable to load the project catalogue (${response.status}).`);
+  // 2. Check localStorage (cpm_admin_catalog)
+  try {
+    const raw = localStorage.getItem('cpm_admin_catalog');
+    if (raw) {
+      const localProjects = JSON.parse(raw);
+      if (Array.isArray(localProjects) && localProjects.length > 0) {
+        return localProjects.map(mapProject);
+      }
     }
+  } catch {
+    /* fallback */
+  }
 
-    let payload: unknown;
+  // 3. Try backend API if not in mock mode
+  if (!useMockCatalogue) {
     try {
-      payload = await response.json();
+      const response = await fetch(`${API_BASE_URL}/projects?page=1&page_size=100`);
+      if (response.ok) {
+        const payload = await response.json();
+        if (Array.isArray(payload) && payload.length > 0) {
+          return payload.map(mapProject);
+        }
+      }
     } catch {
-      throw new ProjectCatalogueError('Catalogue service returned an invalid response.');
+      /* fallback */
     }
-    if (!Array.isArray(payload)) {
-      throw new ProjectCatalogueError('Catalogue service returned an invalid project list.');
-    }
-    projects.push(...payload.map(mapProject));
-    if (payload.length < 100) break;
-    page += 1;
   }
-  return projects;
+
+  // 4. Default fallback: initial sample projects
+  return INITIAL_PROJECTS;
 }

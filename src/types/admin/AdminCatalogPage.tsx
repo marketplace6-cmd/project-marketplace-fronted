@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Archive, CheckCircle2, FileText, LoaderCircle, Pencil, Plus, Search, X } from 'lucide-react';
+import { AlertCircle, Archive, CheckCircle2, FileText, LoaderCircle, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import {
   AdminCatalogAPI,
   AdminCatalogError,
@@ -63,6 +63,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired }: Admi
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [confirming, setConfirming] = useState<AdminProject | null>(null);
+  const [deletingProject, setDeletingProject] = useState<AdminProject | null>(null);
   const [actionError, setActionError] = useState('');
 
   const loadCatalogue = useCallback(
@@ -206,6 +207,28 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired }: Admi
     }
   };
 
+  const confirmDelete = async () => {
+    if (!deletingProject) return;
+    setSaving(true);
+    setActionError('');
+    try {
+      await AdminCatalogAPI.delete(accessToken, deletingProject.id);
+      setNotice(`Project ${deletingProject.project_code} deleted successfully.`);
+      setDeletingProject(null);
+      setLoading(true);
+      await refreshCatalogue();
+    } catch (requestError) {
+      if (requestError instanceof AdminCatalogError && (requestError.status === 401 || requestError.status === 403)) {
+        onSessionExpired();
+        return;
+      }
+      setActionError(requestError instanceof Error ? requestError.message : 'Unable to delete project.');
+      await refreshCatalogue();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const setField = <K extends keyof AdminProjectInput>(key: K, value: AdminProjectInput[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -327,6 +350,15 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired }: Admi
                           <button type="button" onClick={() => { setConfirming(project); setActionError(''); }} title={project.publication_status === 'SOLD_OUT' ? 'Retry private presentation cleanup' : 'Mark Sold Out'} aria-label={`${project.publication_status === 'SOLD_OUT' ? 'Retry presentation cleanup for' : 'Mark'} ${project.project_code} ${project.publication_status === 'SOLD_OUT' ? '' : 'sold out'}`}
                             className="rounded-md p-2 text-rose-600 hover:bg-rose-50"><Archive size={14} /></button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => { setDeletingProject(project); setActionError(''); }}
+                          title="Delete project"
+                          aria-label={`Delete ${project.project_code}`}
+                          className="rounded-md p-2 text-rose-600 hover:bg-rose-100 transition-colors"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                       {catalogue.total > 50 && (
                         <div className="flex items-center justify-between text-xs text-slate-500">
@@ -372,13 +404,50 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired }: Admi
               {!editing && <label className="text-xs font-semibold text-slate-700">Presentation (PDF, PPT, PPTX; max 20 MB)<input type="file" disabled={form.publication_status === 'SOLD_OUT'} accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => setPresentation(event.target.files?.[0] || null)} className="mt-1 block w-full text-sm font-normal file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 disabled:opacity-50" /></label>}
               <label className="text-xs font-semibold text-slate-700 sm:col-span-2">Short Description<textarea required minLength={5} maxLength={2000} rows={3} value={form.short_description} onChange={(event) => setField('short_description', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" /></label>
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-              <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">Cancel</button>
-              <button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-                {saving && <LoaderCircle size={15} className="animate-spin" />}{editing ? 'Save Changes' : 'Add Project'}
-              </button>
+            <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+              {editing ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const toDelete = editing;
+                    setFormOpen(false);
+                    setDeletingProject(toDelete);
+                    setActionError('');
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+                >
+                  <Trash2 size={15} /> Delete Project
+                </button>
+              ) : <div />}
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setFormOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">Cancel</button>
+                <button disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                  {saving && <LoaderCircle size={15} className="animate-spin" />}{editing ? 'Save Changes' : 'Add Project'}
+                </button>
+              </div>
             </div>
           </form>
+        </div>
+      )}
+
+      {deletingProject && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="delete-project-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-rose-50 text-rose-600"><Trash2 size={20} /></div>
+            <h3 id="delete-project-title" className="mt-4 text-center text-lg font-bold text-slate-900">
+              Delete Project?
+            </h3>
+            <p className="mt-2 text-center text-sm leading-6 text-slate-600">
+              Are you sure you want to permanently delete <span className="font-semibold text-slate-800">{deletingProject.project_code} ({deletingProject.title})</span>? This project will be completely removed from the catalogue. This action cannot be undone.
+            </p>
+            {actionError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{actionError}</p>}
+            <div className="mt-5 flex justify-center gap-2">
+              <button type="button" onClick={() => setDeletingProject(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">Cancel</button>
+              <button type="button" disabled={saving} onClick={() => void confirmDelete()} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">
+                {saving ? 'Deleting...' : 'Delete Permanently'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -293,5 +293,18 @@ export const AdminCatalogAPI = {
       saveLocalCatalog(existing);
       return existing[idx];
     }
+  },
+
+  async delete(accessToken: string, projectId: number): Promise<void> {
+    try {
+      await request(`/admin/projects/${projectId}`, accessToken, {
+        method: 'DELETE'
+      });
+    } catch {
+      // Offline fallback: delete from localStorage
+      const existing = loadLocalCatalog();
+      const filtered = existing.filter((p) => p.id !== projectId);
+      saveLocalCatalog(filtered);
+    }
   }
 };

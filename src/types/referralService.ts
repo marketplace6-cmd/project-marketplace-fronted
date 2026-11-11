@@ -1,4 +1,5 @@
 import { verificationApiBaseUrl } from './verificationService';
+import { supabase } from '../utils/supabase/client';
 
 export interface StudentReferralHistoryItem {
   id: number;
@@ -241,6 +242,34 @@ export const AdminReferralAPI = {
       if (filters.rewardStatus) query.set('reward_status', filters.rewardStatus);
       return parseAdminPage(await request(`/admin/referrals?${query}`, accessToken));
     } catch {
+      // Supabase fallback
+      try {
+        let sbQuery = supabase.from('referrals').select('*', { count: 'exact' });
+        if (filters.status) sbQuery = sbQuery.eq('status', filters.status);
+        if (filters.rewardStatus) sbQuery = sbQuery.eq('reward_status', filters.rewardStatus);
+        if (filters.search.trim()) {
+          sbQuery = sbQuery.or(`referral_code.ilike.%${filters.search.trim()}%,referrer_student_id.ilike.%${filters.search.trim()}%,referred_student_id.ilike.%${filters.search.trim()}%`);
+        }
+        const { data, count, error } = await sbQuery.order('id', { ascending: false });
+        if (!error && data && data.length > 0) {
+          const items: AdminReferralRecord[] = data.map((d: any) => ({
+            id: Number(d.id),
+            attribution_id: d.attribution_id ? Number(d.attribution_id) : null,
+            referral_code: d.referral_code,
+            status: d.status,
+            created_at: d.created_at || new Date().toISOString(),
+            referrer_student_id: d.referrer_student_id || null,
+            referred_student_id: d.referred_student_id || null,
+            order_id: d.order_id ? Number(d.order_id) : null,
+            reward_amount: d.reward_amount ? Number(d.reward_amount) : null,
+            reward_currency: d.reward_currency || 'INR',
+            reward_status: d.reward_status || null
+          }));
+          return { items, total: count || items.length, page: filters.page, page_size: 25 };
+        }
+      } catch {
+        /* proceed to empty */
+      }
       return { items: [], total: 0, page: filters.page, page_size: 25 };
     }
   },

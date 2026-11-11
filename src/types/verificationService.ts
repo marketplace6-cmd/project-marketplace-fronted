@@ -1,3 +1,5 @@
+import { supabase } from '../utils/supabase/client';
+
 export interface VerificationQueueItem {
   id: number;
   user_id: number;
@@ -315,7 +317,40 @@ export const AdminVerificationAPI = {
       }
       return data;
     } catch {
-      // Offline fallback: load from localStorage
+      // 1. Try Supabase
+      try {
+        let sbQuery = supabase.from('verifications').select('*', { count: 'exact' });
+        if (filters.status) sbQuery = sbQuery.eq('status', filters.status);
+        if (filters.search) {
+          sbQuery = sbQuery.or(`student_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,college.ilike.%${filters.search}%,course.ilike.%${filters.search}%`);
+        }
+        const { data, count, error } = await sbQuery.order('id', { ascending: false });
+        if (!error && data && data.length > 0) {
+          const items: VerificationQueueItem[] = data.map((d: any) => ({
+            id: Number(d.id),
+            user_id: Number(d.user_id || d.id),
+            student_name: d.student_name,
+            email: d.email || null,
+            phone: d.phone || null,
+            college: d.college || null,
+            course: d.course || null,
+            status: d.status,
+            submitted_at: d.submitted_at || d.created_at || new Date().toISOString()
+          }));
+          const pendingCount = items.filter((i) => i.status === 'PENDING').length;
+          return {
+            items,
+            total: count || items.length,
+            pending_count: pendingCount,
+            page: filters.page,
+            page_size: 25
+          };
+        }
+      } catch {
+        /* proceed to localStorage */
+      }
+
+      // 2. Offline fallback: load from localStorage
       const all = loadLocalVerifications();
       const filtered = all.filter((item) => {
         if (filters.search) {
@@ -374,7 +409,18 @@ export const AdminVerificationAPI = {
         body: JSON.stringify({ status, rejection_reason: rejectionReason })
       });
     } catch {
-      // Offline fallback
+      // 1. Update in Supabase
+      try {
+        await supabase.from('verifications').update({
+          status,
+          rejection_reason: rejectionReason || null,
+          updated_at: new Date().toISOString()
+        }).eq('id', verificationId);
+      } catch {
+        /* ignore */
+      }
+
+      // 2. Offline fallback
       const all = loadLocalVerifications();
       const idx = all.findIndex((i) => i.id === verificationId);
       if (idx !== -1) {

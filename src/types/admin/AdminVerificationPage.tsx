@@ -19,6 +19,7 @@ import {
   VerificationQueue,
   VerificationQueueItem
 } from '../verificationService';
+import { supabase } from '../../utils/supabase/client';
 
 interface AdminVerificationPageProps {
   accessToken: string;
@@ -114,6 +115,25 @@ export default function AdminVerificationPage({
       active = false;
     };
   }, [fetchQueue, onSessionExpired]);
+
+  // Real-time Supabase subscription for verification submissions
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-verifications-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'verifications' },
+        () => {
+          void refresh();
+          onChanged();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [refresh, onChanged]);
 
   useEffect(() => {
     if (!selected) return;

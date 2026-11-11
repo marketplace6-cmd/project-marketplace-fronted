@@ -23,6 +23,7 @@ import StudentCommercePanel from './StudentCommercePanel';
 import AdminDashboard from './admin/AdminDashboard';
 import StudentReferralPage from './StudentReferralPage';
 import { ReferralApiError, StudentReferralAPI } from './referralService';
+import { supabase } from '../utils/supabase/client';
 
 type PageRoute =
   | 'home'
@@ -142,7 +143,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (useMockCatalogue) return;
     let active = true;
     void getPublicProjects()
       .then((result) => {
@@ -165,6 +165,29 @@ export default function App() {
       });
     return () => {
       active = false;
+    };
+  }, []);
+
+  // Real-time Supabase subscription for public projects
+  useEffect(() => {
+    const channel = supabase
+      .channel('public-projects-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        () => {
+          void getPublicProjects()
+            .then((result) => {
+              setCatalogueError('');
+              setProjects(result);
+            })
+            .catch(() => {});
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
     };
   }, []);
 

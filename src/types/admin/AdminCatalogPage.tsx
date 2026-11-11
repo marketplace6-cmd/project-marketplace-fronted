@@ -8,6 +8,7 @@ import {
   AdminProjectList,
   CatalogueStatus
 } from '../adminCatalogService';
+import { supabase } from '../../utils/supabase/client';
 
 interface AdminCatalogPageProps {
   accessToken: string;
@@ -101,6 +102,24 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired }: Admi
       active = false;
     };
   }, [loadCatalogue, onSessionExpired]);
+
+  // Real-time Supabase subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-projects-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        () => {
+          void refreshCatalogue();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshCatalogue]);
 
   const refreshCatalogue = async () => {
     setLoading(true);

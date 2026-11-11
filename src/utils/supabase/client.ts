@@ -4,3 +4,4 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://rssrbvlptyskfr
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_tlSDEpNLvnAJprODrcYJ-A_xMZbQSsh';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
+

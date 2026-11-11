@@ -1,5 +1,6 @@
 import { ProjectDTO } from './types';
 import { INITIAL_PROJECTS } from './mockData';
+import { supabase } from '../utils/supabase/client';
 
 export class ProjectCatalogueError extends Error {
   constructor(message: string) {
@@ -80,6 +81,16 @@ function mapProject(value: unknown): ProjectDTO {
 }
 
 export async function getPublicProjects(): Promise<ProjectDTO[]> {
+  // 1. Try Supabase projects table
+  try {
+    const { data, error } = await supabase.from('projects').select('*').order('id', { ascending: false });
+    if (!error && data && data.length > 0) {
+      return data.map(mapProject);
+    }
+  } catch {
+    /* fallback to API or mock */
+  }
+
   if (useMockCatalogue) return INITIAL_PROJECTS;
 
   const projects: ProjectDTO[] = [];

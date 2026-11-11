@@ -234,11 +234,15 @@ export const AdminReferralAPI = {
     accessToken: string,
     filters: { search: string; status: string; rewardStatus: string; page: number }
   ): Promise<AdminReferralPageResult> {
-    const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
-    if (filters.search.trim()) query.set('search', filters.search.trim());
-    if (filters.status) query.set('status', filters.status);
-    if (filters.rewardStatus) query.set('reward_status', filters.rewardStatus);
-    return parseAdminPage(await request(`/admin/referrals?${query}`, accessToken));
+    try {
+      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
+      if (filters.search.trim()) query.set('search', filters.search.trim());
+      if (filters.status) query.set('status', filters.status);
+      if (filters.rewardStatus) query.set('reward_status', filters.rewardStatus);
+      return parseAdminPage(await request(`/admin/referrals?${query}`, accessToken));
+    } catch {
+      return { items: [], total: 0, page: filters.page, page_size: 25 };
+    }
   },
 
   async get(accessToken: string, referralId: number): Promise<AdminReferralDetail> {

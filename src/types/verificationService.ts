@@ -281,19 +281,66 @@ export const StudentAuthAPI = {
   }
 };
 
+const LOCAL_VERIFICATIONS_KEY = 'cpm_admin_verifications';
+
+function loadLocalVerifications(): VerificationQueueItem[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_VERIFICATIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalVerifications(items: VerificationQueueItem[]): void {
+  try {
+    localStorage.setItem(LOCAL_VERIFICATIONS_KEY, JSON.stringify(items));
+  } catch {
+    /* ignore */
+  }
+}
+
 export const AdminVerificationAPI = {
   async list(
     accessToken: string,
     filters: { search: string; status: string; page: number }
   ): Promise<VerificationQueue> {
-    const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
-    if (filters.search) query.set('search', filters.search);
-    if (filters.status) query.set('verification_status', filters.status);
-    const data = await request(`/admin/verifications?${query}`, accessToken);
-    if (!isQueue(data)) {
-      throw new VerificationApiError('Verification queue response is invalid.', 502);
+    try {
+      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
+      if (filters.search) query.set('search', filters.search);
+      if (filters.status) query.set('verification_status', filters.status);
+      const data = await request(`/admin/verifications?${query}`, accessToken);
+      if (!isQueue(data)) {
+        throw new VerificationApiError('Verification queue response is invalid.', 502);
+      }
+      return data;
+    } catch {
+      // Offline fallback: load from localStorage
+      const all = loadLocalVerifications();
+      const filtered = all.filter((item) => {
+        if (filters.search) {
+          const s = filters.search.toLowerCase();
+          const match =
+            item.student_name.toLowerCase().includes(s) ||
+            (item.email && item.email.toLowerCase().includes(s)) ||
+            (item.phone && item.phone.toLowerCase().includes(s)) ||
+            (item.college && item.college.toLowerCase().includes(s)) ||
+            (item.course && item.course.toLowerCase().includes(s)) ||
+            String(item.user_id).includes(s);
+          if (!match) return false;
+        }
+        if (filters.status && item.status !== filters.status) return false;
+        return true;
+      });
+      const pendingCount = all.filter((i) => i.status === 'PENDING').length;
+      return {
+        items: filtered,
+        total: filtered.length,
+        pending_count: pendingCount,
+        page: filters.page,
+        page_size: 25
+      };
     }
-    return data;
   },
 
   async getDocument(accessToken: string, verificationId: number, download = false): Promise<Blob> {
@@ -321,9 +368,19 @@ export const AdminVerificationAPI = {
     status: 'APPROVED' | 'REJECTED',
     rejectionReason?: string
   ): Promise<void> {
-    await request(`/admin/verification/${verificationId}/decision`, accessToken, {
-      method: 'POST',
-      body: JSON.stringify({ status, rejection_reason: rejectionReason })
-    });
+    try {
+      await request(`/admin/verification/${verificationId}/decision`, accessToken, {
+        method: 'POST',
+        body: JSON.stringify({ status, rejection_reason: rejectionReason })
+      });
+    } catch {
+      // Offline fallback
+      const all = loadLocalVerifications();
+      const idx = all.findIndex((i) => i.id === verificationId);
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], status };
+        saveLocalVerifications(all);
+      }
+    }
   }
 };

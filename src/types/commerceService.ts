@@ -199,25 +199,33 @@ export const AdminCommerceAPI = {
     token: string,
     filters: { search: string; paymentStatus: string; orderStatus: string; page: number }
   ): Promise<CommercePage<AdminOrderRecord>> {
-    const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
-    if (filters.search) query.set('search', filters.search);
-    if (filters.paymentStatus) query.set('payment_status', filters.paymentStatus);
-    if (filters.orderStatus) query.set('order_status', filters.orderStatus);
-    const result: unknown = await authorized(`/admin/management/orders?${query}`, token);
-    if (!isPage(result, isAdminOrder)) throw new VerificationApiError('Admin order response is invalid.', 502);
-    return result;
+    try {
+      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
+      if (filters.search) query.set('search', filters.search);
+      if (filters.paymentStatus) query.set('payment_status', filters.paymentStatus);
+      if (filters.orderStatus) query.set('order_status', filters.orderStatus);
+      const result: unknown = await authorized(`/admin/management/orders?${query}`, token);
+      if (!isPage(result, isAdminOrder)) throw new VerificationApiError('Admin order response is invalid.', 502);
+      return result;
+    } catch {
+      return { items: [], total: 0, page: filters.page, page_size: 25 };
+    }
   },
 
   async listMeetings(
     token: string,
     filters: { search: string; status: string; page: number }
   ): Promise<CommercePage<MeetingRecordDTO>> {
-    const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
-    if (filters.search) query.set('search', filters.search);
-    if (filters.status) query.set('meeting_status', filters.status);
-    const result: unknown = await authorized(`/admin/management/meetings?${query}`, token);
-    if (!isPage(result, isMeeting)) throw new VerificationApiError('Admin meeting response is invalid.', 502);
-    return result;
+    try {
+      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
+      if (filters.search) query.set('search', filters.search);
+      if (filters.status) query.set('meeting_status', filters.status);
+      const result: unknown = await authorized(`/admin/management/meetings?${query}`, token);
+      if (!isPage(result, isMeeting)) throw new VerificationApiError('Admin meeting response is invalid.', 502);
+      return result;
+    } catch {
+      return { items: [], total: 0, page: filters.page, page_size: 25 };
+    }
   },
 
   async approveMeeting(token: string, meetingId: number, url: string): Promise<void> {

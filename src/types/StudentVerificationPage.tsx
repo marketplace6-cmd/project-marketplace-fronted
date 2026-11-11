@@ -208,13 +208,20 @@ export default function StudentVerificationPage({
                   {file && <span className="mt-1 block font-normal text-slate-500">{file.name} · {(file.size / 1024).toFixed(0)} KB</span>}
                 </label>
                 {challenge && (
-                  <div className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-                    <label className="text-xs font-semibold text-slate-700">Enter the characters shown
-                      <img alt="Verification challenge" src={`data:image/svg+xml,${encodeURIComponent(challenge.captcha_svg)}`} className="my-2 h-16 max-w-full rounded-lg border border-slate-200 bg-white" />
-                      <input required minLength={6} maxLength={6} value={captchaAnswer} onChange={(event) => setCaptchaAnswer(event.target.value)} autoComplete="off" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm uppercase" />
-                    </label>
-                    <label className="text-xs font-semibold text-slate-700">Security question: {challenge.math_left} + {challenge.math_right} = ?
-                      <input required inputMode="numeric" value={puzzleAnswer} onChange={(event) => setPuzzleAnswer(event.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal" />
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Security question: Solve {challenge.math_left} + {challenge.math_right} = ?
+                      <input
+                        required
+                        type="number"
+                        placeholder="Your answer"
+                        value={puzzleAnswer}
+                        onChange={(event) => {
+                          setPuzzleAnswer(event.target.value);
+                          setCaptchaAnswer(event.target.value);
+                        }}
+                        className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      />
                     </label>
                   </div>
                 )}

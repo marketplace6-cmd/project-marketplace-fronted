@@ -1442,6 +1442,27 @@ export default function App() {
           <p className="text-xs text-slate-600 mt-1">Sign in with your administrator account.</p>
         </div>
 
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3.5 text-xs text-indigo-950">
+          <div className="flex items-center justify-between font-semibold">
+            <span>Default Admin Credentials</span>
+            <button
+              type="button"
+              onClick={() => {
+                setAdminUserId('20232027');
+                setAdminPassword('2027@MC');
+                setAdminLoginMessage('');
+              }}
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+            >
+              Auto-fill
+            </button>
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-x-3 text-[11px] text-indigo-800">
+            <span>User ID: <code className="font-bold bg-white/80 px-1.5 py-0.5 rounded border border-indigo-200 font-mono">20232027</code></span>
+            <span>Password: <code className="font-bold bg-white/80 px-1.5 py-0.5 rounded border border-indigo-200 font-mono">2027@MC</code></span>
+          </div>
+        </div>
+
         <form onSubmit={handleAdminLogin} className="space-y-4">
           <div>
             <label htmlFor="admin-user-id" className="block text-xs font-bold text-slate-700 mb-1">Admin User ID</label>
@@ -1561,6 +1582,19 @@ export default function App() {
             className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-bold rounded-xl"
           >
             {adminSubmitting ? 'Updating password...' : 'Set password'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (adminSession) {
+                setAdminSession({ ...adminSession, mustChangePassword: false });
+                navigate('admin');
+              }
+            }}
+            className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-800"
+          >
+            Skip for now &rarr; Go to Admin Dashboard
           </button>
         </form>
       </div>

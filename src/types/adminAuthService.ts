@@ -182,6 +182,7 @@ interface LocalAdminStorage {
   password?: string;
   alt_password?: string;
   must_change_password: boolean;
+  password_changed?: boolean;
 }
 
 function getLocalAdmin(): LocalAdminStorage {
@@ -193,9 +194,10 @@ function getLocalAdmin(): LocalAdminStorage {
   }
   return {
     admin_id: '20232027',
-    password: '<2027@MC>',
-    alt_password: '2027@MC',
-    must_change_password: false
+    password: '2027@MC',
+    alt_password: '<2027@MC>',
+    must_change_password: false,
+    password_changed: false
   };
 }
 
@@ -219,28 +221,28 @@ export const AdminAuthAPI = {
         trimmedId.toLowerCase() === 'admin' ||
         trimmedId === '20232027';
 
-      const acceptedPasswords = [
-        local.password,
-        local.alt_password,
-        '2027@MC',
-        '<2027@MC>',
-        '20232027@MC',
-        '<20232027@MC>',
-        'admin',
-        'admin123',
-        'admin@123',
-        'Admin@123',
-        'password',
-        'password123'
-      ].filter((p): p is string => Boolean(p));
+      let isValidPassword = false;
+      if (local.password_changed && local.password) {
+        // Once the admin sets her own password, only that new password is accepted
+        isValidPassword = password === local.password;
+      } else {
+        // Initial setup credentials before admin updates password
+        const initialAllowed = [
+          local.password,
+          local.alt_password,
+          '2027@MC',
+          '<2027@MC>',
+          '20232027@MC',
+          '<20232027@MC>'
+        ].filter((p): p is string => Boolean(p));
 
-      const normalizedInput = password.trim().replace(/^<|>$/g, '');
-      const isKnownPassword = acceptedPasswords.some(
-        (p) => p === password || p.replace(/^<|>$/g, '') === normalizedInput
-      );
+        const normalizedInput = password.trim().replace(/^<|>$/g, '');
+        isValidPassword = initialAllowed.some(
+          (p) => p === password || p.replace(/^<|>$/g, '') === normalizedInput
+        );
+      }
 
-      // In offline/mock fallback, allow login if admin user matches and password matches any variant or is non-empty
-      if (isValidUser && (isKnownPassword || password.trim().length >= 4)) {
+      if (isValidUser && isValidPassword) {
         return {
           access_token: 'mock-admin-token-offline',
           token_type: 'bearer',
@@ -259,6 +261,7 @@ export const AdminAuthAPI = {
       const local = getLocalAdmin();
       local.password = new_password;
       local.alt_password = new_password;
+      local.password_changed = true;
       local.must_change_password = false;
       saveLocalAdmin(local);
       return {

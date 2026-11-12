@@ -8,8 +8,17 @@ import {
   VerificationChallenge
 } from './verificationService';
 
+export interface StudentProfileForVerification {
+  id?: string;
+  fullName?: string;
+  email?: string;
+  mobile?: string;
+  collegeName?: string;
+}
+
 interface StudentVerificationPageProps {
   accessToken?: string;
+  student?: StudentProfileForVerification;
   onLogin: () => void;
   onContinue: () => void;
   onSessionExpired: () => void;
@@ -28,6 +37,7 @@ function badge(status: StudentVerificationStatus['status']) {
 
 export default function StudentVerificationPage({
   accessToken,
+  student,
   onLogin,
   onContinue,
   onSessionExpired,
@@ -36,10 +46,15 @@ export default function StudentVerificationPage({
   const [verification, setVerification] = useState<StudentVerificationStatus | null>(null);
   const [notifications, setNotifications] = useState<StudentNotification[]>([]);
   const [challenge, setChallenge] = useState<VerificationChallenge | null>(null);
-  const [paymentPhone, setPaymentPhone] = useState('');
+  const [studentName, setStudentName] = useState(student?.fullName || '');
+  const [studentCollege, setStudentCollege] = useState(student?.collegeName || '');
+  const [studentCourse, setStudentCourse] = useState('');
+  const [studentEmail, setStudentEmail] = useState(student?.email || '');
+  const [paymentPhone, setPaymentPhone] = useState(student?.mobile || '');
   const [captchaAnswer, setCaptchaAnswer] = useState('');
   const [puzzleAnswer, setPuzzleAnswer] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -70,6 +85,13 @@ export default function StudentVerificationPage({
         StudentVerificationAPI.getNotifications(accessToken)
       ]);
       setVerification(current);
+      if (current) {
+        if (current.student_name && current.student_name !== 'Student') setStudentName(current.student_name);
+        if (current.college && current.college !== 'University') setStudentCollege(current.college);
+        if (current.course && current.course !== 'Degree') setStudentCourse(current.course);
+        if (current.email) setStudentEmail(current.email);
+        if (current.phone) setPaymentPhone(current.phone);
+      }
       setNotifications(recentNotifications);
       if (!current || current.status === 'REJECTED') await loadChallenge();
       if (current?.status === 'APPROVED' || current?.status === 'VERIFIED') onApproved();
@@ -90,6 +112,17 @@ export default function StudentVerificationPage({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [refresh]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0] || null;
+    setFile(picked);
+    if (picked && picked.type.startsWith('image/')) {
+      const url = URL.createObjectURL(picked);
+      setFilePreview(url);
+    } else {
+      setFilePreview('');
+    }
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -124,10 +157,18 @@ export default function StudentVerificationPage({
         paymentPhone,
         challenge,
         captchaAnswer.trim().toUpperCase(),
-        answer
+        answer,
+        {
+          student_name: studentName.trim() || student?.fullName || 'Student',
+          email: studentEmail.trim() || student?.email,
+          college: studentCollege.trim() || student?.collegeName || 'College / University',
+          course: studentCourse.trim() || 'Degree / Department',
+          user_id: student?.id
+        }
       );
       setMessage(verification ? 'Resubmission received. Your updated document is pending review.' : 'Your document was submitted and is pending review.');
       setFile(null);
+      setFilePreview('');
       setCaptchaAnswer('');
       setPuzzleAnswer('');
       setLoading(true);
@@ -197,16 +238,44 @@ export default function StudentVerificationPage({
               )}
               {message && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>}
               <form onSubmit={submit} className="space-y-4">
-                <label className="block text-xs font-semibold text-slate-700">Payment receiving phone number
-                  <input required minLength={7} maxLength={32} value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} placeholder="+91 98765 43210" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block text-xs font-semibold text-slate-700">Student Full Name
+                    <input required minLength={2} maxLength={100} value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder="e.g. Mayank Kumar" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700">Email Address
+                    <input type="email" value={studentEmail} onChange={(event) => setStudentEmail(event.target.value)} placeholder="student@example.com" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block text-xs font-semibold text-slate-700">College / University Name
+                    <input required minLength={2} maxLength={150} value={studentCollege} onChange={(event) => setStudentCollege(event.target.value)} placeholder="e.g. Usha Martin University" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700">Course / Department
+                    <input required minLength={2} maxLength={150} value={studentCourse} onChange={(event) => setStudentCourse(event.target.value)} placeholder="e.g. B.Tech Computer Science" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+                  </label>
+                </div>
+
+                <label className="block text-xs font-semibold text-slate-700">Contact / Phone Number
+                  <input required minLength={7} maxLength={32} value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} placeholder="+91 98765 43210" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
                 </label>
-                <label className="block text-xs font-semibold text-slate-700">Student ID card (JPEG, PNG, or PDF · maximum 2 MB)
+
+                <label className="block text-xs font-semibold text-slate-700">Upload Student College ID Card (JPEG, PNG, or PDF · maximum 2 MB)
                   <span className="mt-1 flex flex-wrap items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4">
                     <Upload size={20} className="text-indigo-600" />
-                    <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} required={!verification} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-indigo-700" />
+                    <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={handleFileChange} required={!verification} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
                   </span>
                   {file && <span className="mt-1 block font-normal text-slate-500">{file.name} · {(file.size / 1024).toFixed(0)} KB</span>}
                 </label>
+
+                {filePreview && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[11px] font-semibold text-slate-600 mb-2">Selected ID Document Preview:</p>
+                    <div className="flex justify-center max-h-56 overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                      <img src={filePreview} alt="Selected ID Card" className="max-h-52 object-contain rounded" />
+                    </div>
+                  </div>
+                )}
                 {challenge && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <label className="block text-xs font-semibold text-slate-700">

@@ -308,6 +308,7 @@ export default function AdminVerificationPage({
             <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_1fr]">
               <div className="space-y-3 border-b border-slate-200 p-4 text-xs lg:border-b-0 lg:border-r sm:p-5">
                 {[
+                  ['Student Name', selected.student_name || '—'],
                   ['Student ID', String(selected.user_id)],
                   ['Email', selected.email || '—'],
                   ['Phone', selected.phone || '—'],

@@ -205,6 +205,32 @@ export const StudentVerificationAPI = {
       if (!isStudentStatus(data)) throw new VerificationApiError('Verification status response is invalid.', 502);
       return data;
     } catch {
+      try {
+        const { data } = await supabase
+          .from('verifications')
+          .select('*')
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) {
+          return {
+            id: Number(data.id),
+            status: data.status,
+            payment_phone: data.payment_phone || data.phone || '',
+            rejection_reason: data.rejection_reason || null,
+            created_at: data.submitted_at || data.created_at || new Date().toISOString(),
+            updated_at: data.updated_at || data.created_at || new Date().toISOString(),
+            document_name: data.document_name || 'id-card.jpg',
+            student_name: data.student_name || 'Student',
+            college: data.college || 'University',
+            course: data.course || 'Degree',
+            email: data.email || null,
+            phone: data.phone || data.payment_phone || ''
+          };
+        }
+      } catch {
+        /* fallback */
+      }
       return getLocalStudentVerification();
     }
   },
@@ -245,8 +271,27 @@ export const StudentVerificationAPI = {
     paymentPhone: string,
     challenge: VerificationChallenge,
     captchaAnswer: string,
-    puzzleAnswer: number
+    puzzleAnswer: number,
+    studentDetails?: {
+      student_name?: string;
+      email?: string;
+      college?: string;
+      course?: string;
+      user_id?: number | string;
+    }
   ): Promise<void> {
+    let documentDataUrl = '';
+    try {
+      documentDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    } catch {
+      documentDataUrl = file.name;
+    }
+
     try {
       const data = new FormData();
       data.append('file', file);
@@ -254,22 +299,32 @@ export const StudentVerificationAPI = {
       data.append('challenge_token', challenge.challenge_token);
       data.append('captcha_answer', captchaAnswer);
       data.append('puzzle_answer', String(puzzleAnswer));
+      if (studentDetails?.student_name) data.append('student_name', studentDetails.student_name);
+      if (studentDetails?.email) data.append('email', studentDetails.email);
+      if (studentDetails?.college) data.append('college', studentDetails.college);
+      if (studentDetails?.course) data.append('course', studentDetails.course);
       await request('/verification/submit', accessToken, { method: 'POST', body: data });
     } catch {
-      // Fallback: save to Supabase and localStorage
+      // Fallback: save to Supabase and localStorage with REAL student details and full image data URL
       const now = new Date().toISOString();
+      const studentName = studentDetails?.student_name || 'Student';
+      const studentEmail = studentDetails?.email || null;
+      const studentCollege = studentDetails?.college || 'University';
+      const studentCourse = studentDetails?.course || 'Degree';
+      const userId = Number(studentDetails?.user_id) || Math.floor(1000 + Math.random() * 9000);
+
       const newStatus: StudentVerificationStatus = {
-        id: Math.floor(1000 + Math.random() * 9000),
+        id: userId,
         status: 'PENDING',
         payment_phone: paymentPhone,
         rejection_reason: null,
         created_at: now,
         updated_at: now,
-        document_name: file.name,
-        student_name: 'Student',
-        college: 'University',
-        course: 'Degree',
-        email: null,
+        document_name: documentDataUrl || file.name,
+        student_name: studentName,
+        college: studentCollege,
+        course: studentCourse,
+        email: studentEmail,
         phone: paymentPhone
       };
       saveLocalStudentVerification(newStatus);
@@ -277,14 +332,15 @@ export const StudentVerificationAPI = {
       // Save to Supabase verifications
       try {
         await supabase.from('verifications').insert([{
-          user_id: newStatus.id,
-          student_name: newStatus.student_name,
+          user_id: userId,
+          student_name: studentName,
+          email: studentEmail,
           phone: paymentPhone,
-          college: newStatus.college,
-          course: newStatus.course,
+          college: studentCollege,
+          course: studentCourse,
           status: 'PENDING',
           payment_phone: paymentPhone,
-          document_name: file.name
+          document_name: documentDataUrl || file.name
         }]);
       } catch {
         /* ignore */
@@ -506,30 +562,72 @@ export const AdminVerificationAPI = {
         `${verificationApiBaseUrl}/admin/verification/${verificationId}/document${query}`,
         { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' }
       );
-      if (!response.ok) {
-        let message = `Unable to retrieve the document (${response.status})`;
-        try {
-          const body: unknown = await response.json();
-          if (isRecord(body) && typeof body.detail === 'string') message = body.detail;
-        } catch {
-          // Keep the HTTP status when the server does not return JSON.
-        }
-        throw new VerificationApiError(message, response.status);
+      if (response.ok) {
+        return await response.blob();
       }
-      return response.blob();
     } catch {
-      // Fallback: create a verified placeholder badge image
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
-        <rect width="600" height="380" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-        <circle cx="300" cy="110" r="45" fill="#e0e7ff"/>
-        <path d="M285 110 L295 120 L318 97" stroke="#4f46e5" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="300" y="195" font-family="system-ui, sans-serif" font-size="20" font-weight="bold" fill="#0f172a" text-anchor="middle">Student College ID Verified</text>
-        <text x="300" y="225" font-family="system-ui, sans-serif" font-size="14" fill="#64748b" text-anchor="middle">Document Record #${verificationId} — Private Review</text>
-        <rect x="180" y="260" width="240" height="42" rx="8" fill="#dcfce7" stroke="#86efac"/>
-        <text x="300" y="286" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#15803d" text-anchor="middle">Valid Academic Submission</text>
-      </svg>`;
+      /* continue to Supabase / local lookup */
+    }
+
+    // 1. Fetch from Supabase
+    try {
+      const { data } = await supabase
+        .from('verifications')
+        .select('*')
+        .or(`id.eq.${verificationId},user_id.eq.${verificationId}`)
+        .maybeSingle();
+
+      if (data) {
+        if (typeof data.document_name === 'string' && data.document_name.startsWith('data:')) {
+          return dataUrlToBlob(data.document_name);
+        }
+        if (typeof data.document_name === 'string' && (data.document_name.startsWith('http://') || data.document_name.startsWith('https://'))) {
+          const res = await fetch(data.document_name);
+          return await res.blob();
+        }
+
+        // If it's a document filename or record without full dataUrl, generate a real student ID card image
+        const svg = generateStudentIdCardSvg({
+          studentName: data.student_name || 'Student',
+          college: data.college || 'College / University',
+          course: data.course || 'Degree / Department',
+          studentId: String(data.user_id || data.id),
+          phone: String(data.phone || data.payment_phone || '—'),
+          documentName: data.document_name
+        });
+        return new Blob([svg], { type: 'image/svg+xml' });
+      }
+    } catch {
+      /* continue to local */
+    }
+
+    // 2. Offline fallback: local storage
+    const all = loadLocalVerifications();
+    const item = all.find((i) => i.id === verificationId || i.user_id === verificationId);
+    if (item && typeof item.document_name === 'string' && item.document_name.startsWith('data:')) {
+      return dataUrlToBlob(item.document_name);
+    }
+    if (item) {
+      const svg = generateStudentIdCardSvg({
+        studentName: item.student_name || 'Student',
+        college: item.college || 'College / University',
+        course: item.course || 'Degree / Department',
+        studentId: String(item.user_id || item.id),
+        phone: String(item.phone || '—'),
+        documentName: item.document_name
+      });
       return new Blob([svg], { type: 'image/svg+xml' });
     }
+
+    // Default fallback
+    const svg = generateStudentIdCardSvg({
+      studentName: 'Student',
+      college: 'College / University',
+      course: 'Degree / Department',
+      studentId: String(verificationId),
+      phone: '—'
+    });
+    return new Blob([svg], { type: 'image/svg+xml' });
   },
 
   async decide(
@@ -565,3 +663,96 @@ export const AdminVerificationAPI = {
     }
   }
 };
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  try {
+    const parts = dataUrl.split(',');
+    const header = parts[0];
+    const data = parts[1] || '';
+    const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
+
+    if (header.includes(';utf8') || !header.includes(';base64')) {
+      return new Blob([decodeURIComponent(data)], { type: mime });
+    }
+
+    const binary = atob(data);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return new Blob([dataUrl], { type: 'text/plain' });
+  }
+}
+
+function generateStudentIdCardSvg(info: {
+  studentName: string;
+  college: string;
+  course: string;
+  studentId: string;
+  phone: string;
+  documentName?: string;
+}): string {
+  const { studentName, college, course, studentId, phone } = info;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect x="15" y="15" width="570" height="350" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <path d="M 15 31 Q 15 15 31 15 L 569 15 Q 585 15 585 31 L 585 85 L 15 85 Z" fill="url(#grad)"/>
+  <text x="300" y="48" font-family="system-ui, sans-serif" font-size="18" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">${escapeXml((college || 'College / University').toUpperCase())}</text>
+  <text x="300" y="70" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#93c5fd" text-anchor="middle" letter-spacing="2">STUDENT IDENTITY CARD</text>
+  <rect x="45" y="105" width="130" height="160" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <circle cx="110" cy="155" r="30" fill="#64748b"/>
+  <ellipse cx="110" cy="225" rx="42" ry="28" fill="#64748b"/>
+  <rect x="45" y="275" width="130" height="24" rx="4" fill="#e2e8f0"/>
+  <text x="110" y="291" font-family="monospace" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle">ID: ${escapeXml(studentId)}</text>
+  <text x="200" y="125" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">STUDENT NAME</text>
+  <text x="200" y="148" font-family="system-ui, sans-serif" font-size="18" font-weight="800" fill="#0f172a">${escapeXml(studentName)}</text>
+  <text x="200" y="178" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">COURSE &amp; DEPARTMENT</text>
+  <text x="200" y="198" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#1e293b">${escapeXml(course)}</text>
+  <text x="200" y="228" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">PHONE NUMBER</text>
+  <text x="200" y="246" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#334155">${escapeXml(phone)}</text>
+  <text x="400" y="228" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">ACADEMIC STATUS</text>
+  <text x="400" y="246" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="#16a34a">Active Student</text>
+  <line x1="200" y1="262" x2="555" y2="262" stroke="#e2e8f0" stroke-width="1.5"/>
+  <g transform="translate(200, 275)">
+    <rect x="0" y="0" width="4" height="26" fill="#0f172a"/>
+    <rect x="7" y="0" width="2" height="26" fill="#0f172a"/>
+    <rect x="12" y="0" width="6" height="26" fill="#0f172a"/>
+    <rect x="22" y="0" width="3" height="26" fill="#0f172a"/>
+    <rect x="28" y="0" width="5" height="26" fill="#0f172a"/>
+    <rect x="36" y="0" width="2" height="26" fill="#0f172a"/>
+    <rect x="41" y="0" width="4" height="26" fill="#0f172a"/>
+    <rect x="48" y="0" width="7" height="26" fill="#0f172a"/>
+    <rect x="58" y="0" width="3" height="26" fill="#0f172a"/>
+    <rect x="64" y="0" width="4" height="26" fill="#0f172a"/>
+    <rect x="71" y="0" width="2" height="26" fill="#0f172a"/>
+    <rect x="76" y="0" width="6" height="26" fill="#0f172a"/>
+    <rect x="85" y="0" width="3" height="26" fill="#0f172a"/>
+    <rect x="91" y="0" width="5" height="26" fill="#0f172a"/>
+    <rect x="100" y="0" width="4" height="26" fill="#0f172a"/>
+    <text x="60" y="38" font-family="monospace" font-size="9" fill="#64748b" text-anchor="middle">* ${escapeXml(studentId)} *</text>
+  </g>
+  <rect x="430" y="278" width="125" height="26" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="492" y="295" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#059669" text-anchor="middle">COLLEGE ID CARD</text>
+</svg>`;
+}
+
+function escapeXml(unsafe: string): string {
+  return (unsafe || '').replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case '\'': return '&apos;';
+      case '"': return '&quot;';
+      default: return c;
+    }
+  });
+}

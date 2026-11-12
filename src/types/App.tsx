@@ -1336,6 +1336,7 @@ export default function App() {
       return (
         <StudentVerificationPage
           accessToken={student.accessToken}
+          student={student}
           onLogin={() => navigate('login')}
           onContinue={() => navigate('dashboard')}
           onSessionExpired={handleStudentSessionExpired}

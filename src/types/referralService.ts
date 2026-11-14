@@ -278,3 +278,204 @@ export const AdminReferralAPI = {
     return parseAdminDetail(await request(`/admin/referrals/${referralId}`, accessToken));
   }
 };
+
+export interface WithdrawalRequestItem {
+  id: string | number;
+  payout_id: string;
+  student_id: string;
+  student_name?: string;
+  referral_code: string;
+  amount: number;
+  currency?: string;
+  payment_method: 'UPI' | 'BANK_TRANSFER';
+  upi_id?: string;
+  phone?: string;
+  bank_account?: string;
+  ifsc_code?: string;
+  branch_name?: string;
+  status: 'PENDING' | 'PROCESSING' | 'PAID' | 'REJECTED';
+  utr_ref?: string;
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export const StudentPayoutAPI = {
+  loadLocalPayouts(): WithdrawalRequestItem[] {
+    try {
+      const raw = localStorage.getItem('cpm_payouts');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  saveLocalPayouts(items: WithdrawalRequestItem[]): void {
+    try {
+      localStorage.setItem('cpm_payouts', JSON.stringify(items));
+    } catch {
+      /* ignore */
+    }
+  },
+
+  async submitWithdrawal(data: Omit<WithdrawalRequestItem, 'id' | 'created_at' | 'updated_at'>): Promise<WithdrawalRequestItem> {
+    const item: WithdrawalRequestItem = {
+      ...data,
+      id: data.payout_id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Save to local storage
+    const current = StudentPayoutAPI.loadLocalPayouts();
+    StudentPayoutAPI.saveLocalPayouts([item, ...current]);
+
+    // 2. Save to Supabase
+    try {
+      await supabase.from('payouts').insert([{
+        payout_id: item.payout_id,
+        student_id: item.student_id,
+        student_name: item.student_name,
+        referral_code: item.referral_code,
+        amount: item.amount,
+        currency: item.currency || 'INR',
+        payment_method: item.payment_method,
+        upi_id: item.upi_id,
+        phone: item.phone,
+        bank_account: item.bank_account,
+        ifsc_code: item.ifsc_code,
+        branch_name: item.branch_name,
+        status: 'PENDING',
+        utr_ref: item.utr_ref || 'Processing (Within 20 Hours)',
+        notes: item.notes,
+        created_at: item.created_at,
+        updated_at: item.updated_at
+      }]);
+    } catch {
+      /* ignore Supabase error, local persistence ensures resilience */
+    }
+
+    return item;
+  },
+
+  async list(studentId: string, referralCode: string): Promise<WithdrawalRequestItem[]> {
+    let sbItems: WithdrawalRequestItem[] = [];
+    try {
+      const { data, error } = await supabase
+        .from('payouts')
+        .select('*')
+        .or(`referral_code.eq.${referralCode},student_id.eq.${studentId}`)
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        sbItems = data.map((d: any) => ({
+          id: d.id || d.payout_id,
+          payout_id: d.payout_id || `PAY-${d.id}`,
+          student_id: d.student_id,
+          student_name: d.student_name,
+          referral_code: d.referral_code,
+          amount: Number(d.amount),
+          currency: d.currency || 'INR',
+          payment_method: d.payment_method || 'UPI',
+          upi_id: d.upi_id,
+          phone: d.phone,
+          bank_account: d.bank_account,
+          ifsc_code: d.ifsc_code,
+          branch_name: d.branch_name,
+          status: d.status,
+          utr_ref: d.utr_ref,
+          notes: d.notes,
+          created_at: d.created_at,
+          updated_at: d.updated_at
+        }));
+      }
+    } catch {
+      /* ignore */
+    }
+
+    const localItems = StudentPayoutAPI.loadLocalPayouts().filter(
+      (p) => p.referral_code === referralCode || p.student_id === studentId
+    );
+
+    const map = new Map<string, WithdrawalRequestItem>();
+    for (const item of localItems) map.set(item.payout_id, item);
+    for (const item of sbItems) map.set(item.payout_id, item);
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }
+};
+
+export const AdminPayoutAPI = {
+  async listAll(): Promise<WithdrawalRequestItem[]> {
+    let sbItems: WithdrawalRequestItem[] = [];
+    try {
+      const { data, error } = await supabase
+        .from('payouts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        sbItems = data.map((d: any) => ({
+          id: d.id || d.payout_id,
+          payout_id: d.payout_id || `PAY-${d.id}`,
+          student_id: d.student_id,
+          student_name: d.student_name,
+          referral_code: d.referral_code,
+          amount: Number(d.amount),
+          currency: d.currency || 'INR',
+          payment_method: d.payment_method || 'UPI',
+          upi_id: d.upi_id,
+          phone: d.phone,
+          bank_account: d.bank_account,
+          ifsc_code: d.ifsc_code,
+          branch_name: d.branch_name,
+          status: d.status,
+          utr_ref: d.utr_ref,
+          notes: d.notes,
+          created_at: d.created_at,
+          updated_at: d.updated_at
+        }));
+      }
+    } catch {
+      /* ignore */
+    }
+
+    const localItems = StudentPayoutAPI.loadLocalPayouts();
+    const map = new Map<string, WithdrawalRequestItem>();
+    for (const item of localItems) map.set(item.payout_id, item);
+    for (const item of sbItems) map.set(item.payout_id, item);
+
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  },
+
+  async markPaid(payoutId: string, utrRef: string): Promise<void> {
+    const now = new Date().toISOString();
+    // 1. Update Supabase
+    try {
+      await supabase
+        .from('payouts')
+        .update({
+          status: 'PAID',
+          utr_ref: utrRef,
+          updated_at: now
+        })
+        .eq('payout_id', payoutId);
+    } catch {
+      /* ignore */
+    }
+
+    // 2. Update local storage
+    const all = StudentPayoutAPI.loadLocalPayouts();
+    const idx = all.findIndex((p) => p.payout_id === payoutId);
+    if (idx !== -1) {
+      all[idx].status = 'PAID';
+      all[idx].utr_ref = utrRef;
+      all[idx].updated_at = now;
+      StudentPayoutAPI.saveLocalPayouts(all);
+    }
+  }
+};

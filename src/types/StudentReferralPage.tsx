@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import {
   Check,
   Copy,
@@ -13,13 +13,19 @@ import {
   Clock,
   Sparkles,
   ShieldCheck,
-  ArrowRight
+  ArrowRight,
+  Wallet,
+  Lock,
+  AlertCircle,
+  X
 } from 'lucide-react';
 import {
   ReferralApiError,
   StudentReferralAPI,
   StudentReferralDashboard,
-  StudentReferralHistoryItem
+  StudentReferralHistoryItem,
+  StudentPayoutAPI,
+  WithdrawalRequestItem
 } from './referralService';
 import { supabase } from '../utils/supabase/client';
 
@@ -49,6 +55,8 @@ interface StudentReferralPageProps {
   onSessionExpired: () => void;
   onLogin: () => void;
   studentId?: string;
+  studentName?: string;
+  studentMobile?: string;
   referralCode?: string;
   onToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -139,6 +147,8 @@ export default function StudentReferralPage({
   onSessionExpired,
   onLogin,
   studentId = 'STU-2026-0001',
+  studentName = 'Mayank Kumar',
+  studentMobile = '7004273758',
   referralCode = 'A7K2',
   onToast
 }: StudentReferralPageProps) {
@@ -158,6 +168,18 @@ export default function StudentReferralPage({
   // Copy button visual states
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Withdrawal Form State
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawMethod, setWithdrawMethod] = useState<'UPI' | 'BANK_TRANSFER'>('UPI');
+  const [upiId, setUpiId] = useState('mayank@okaxis');
+  const [mobileNumber, setMobileNumber] = useState(studentMobile || '7004273758');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [ifscCode, setIfscCode] = useState('');
+  const [branchName, setBranchName] = useState('');
+  const [submittingWithdrawal, setSubmittingWithdrawal] = useState(false);
+  const [withdrawError, setWithdrawError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -300,30 +322,31 @@ export default function StudentReferralPage({
         });
         setLevelStats(updatedLevelStats);
 
-        // 6. Calculate Payout ledger strictly from live data
+        // 6. Calculate Payout ledger strictly from live data (Supabase + Local Cache)
         let livePayouts: ReferralPayoutRecord[] = [];
-        if (payoutRows.length > 0) {
-          livePayouts = payoutRows.map((p: any) => ({
-            id: p.payout_id || `PAY-${p.id}`,
-            date: p.date || (p.created_at ? new Date(p.created_at).toLocaleString('en-IN') : 'Recent'),
-            amount: Number(p.amount || 0),
-            paymentMode: p.payment_mode || p.method || 'UPI Transfer',
-            account: p.account || p.destination || 'Registered Student VPA',
-            status: p.status === 'PAID' ? 'PAID' : p.status === 'PROCESSING' ? 'PROCESSING' : 'PENDING',
-            utrRef: p.utr_ref || p.reference || 'Pending Settlement'
-          }));
-        } else if (paidRewards > 0) {
-          livePayouts = liveHistory
-            .filter((h) => h.reward_status === 'PAID')
-            .map((h) => ({
-              id: `PAY-${h.order_id || h.id}`,
-              date: new Date(h.created_at).toLocaleString('en-IN'),
-              amount: h.reward_amount || 0,
-              paymentMode: 'UPI Transfer',
-              account: 'mayank@okaxis',
-              status: 'PAID' as const,
-              utrRef: `UPI/UVK/${h.id}/${h.order_id || '9021'}`
+        try {
+          const payoutItems = await StudentPayoutAPI.list(effectiveId, effectiveCode);
+          if (payoutItems.length > 0) {
+            livePayouts = payoutItems.map((p) => ({
+              id: p.payout_id,
+              date: new Date(p.created_at).toLocaleString('en-IN', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+              }),
+              amount: Number(p.amount || 0),
+              paymentMode: p.payment_method === 'UPI' ? 'UPI Transfer' : 'Bank NEFT Transfer',
+              account: p.payment_method === 'UPI'
+                ? (p.upi_id || 'UPI VPA')
+                : `${p.bank_account ? `A/C ••••${p.bank_account.slice(-4)}` : 'Bank A/C'} (${p.ifsc_code || ''})`,
+              status: p.status === 'PAID' ? 'PAID' : (p.status === 'PROCESSING' ? 'PROCESSING' : 'PENDING'),
+              utrRef: p.utr_ref || (p.status === 'PAID' ? 'Settled' : 'Processing (Within 20 Hours)')
             }));
+          }
+        } catch {
+          /* fallback to empty payouts */
         }
         setPayouts(livePayouts);
 
@@ -355,13 +378,16 @@ export default function StudentReferralPage({
 
     void loadLiveReferralData();
 
-    // Realtime Supabase Subscription: Auto-update on new referrals or orders
+    // Realtime Supabase Subscription: Auto-update on new referrals, orders, or payouts
     const channel = supabase
       .channel(`uvikart-referral-live-${referralCode || 'A7K2'}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
         void loadLiveReferralData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        void loadLiveReferralData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payouts' }, () => {
         void loadLiveReferralData();
       })
       .subscribe();
@@ -474,6 +500,89 @@ export default function StudentReferralPage({
   const effectiveLink = dashboard.referral_link || `https://uvikart.com/register?ref=${effectiveCode}`;
   const totalNetworkEarnings = levelStats.reduce((sum, tier) => sum + tier.totalEarnings, 0);
 
+  // Pending withdrawals hold and available withdrawal balance
+  const pendingWithdrawalTotal = payouts
+    .filter((p) => p.status === 'PENDING' || p.status === 'PROCESSING')
+    .reduce((sum, p) => sum + p.amount, 0);
+  const availableBalance = Math.max(0, dashboard.eligible_rewards - pendingWithdrawalTotal);
+  const level1Referrals = levelStats.find((tier) => tier.level === 1)?.activeCount || 0;
+  const isWithdrawalUnlocked = level1Referrals >= 1 && availableBalance > 0;
+
+  const handleWithdrawSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setWithdrawError('');
+    const amt = parseFloat(withdrawAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setWithdrawError('Please enter a valid withdrawal amount greater than ₹0.');
+      return;
+    }
+    if (amt > availableBalance) {
+      setWithdrawError(`Withdrawal amount cannot exceed your available balance of ${formatCurrency(availableBalance)}.`);
+      return;
+    }
+    if (withdrawMethod === 'UPI') {
+      if (!upiId.trim() || !upiId.includes('@')) {
+        setWithdrawError('Please enter a valid UPI ID (e.g. yourname@bank).');
+        return;
+      }
+      if (!mobileNumber.trim() || mobileNumber.replace(/\D/g, '').length < 10) {
+        setWithdrawError('Please enter a valid 10-digit mobile number.');
+        return;
+      }
+    } else {
+      if (!bankAccountNumber.trim() || bankAccountNumber.length < 8) {
+        setWithdrawError('Please enter a valid Bank Account Number (at least 8 digits).');
+        return;
+      }
+      if (!ifscCode.trim() || ifscCode.length < 4) {
+        setWithdrawError('Please enter a valid IFSC Code.');
+        return;
+      }
+    }
+
+    setSubmittingWithdrawal(true);
+    try {
+      const payoutId = `PAY-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const createdItem = await StudentPayoutAPI.submitWithdrawal({
+        payout_id: payoutId,
+        student_id: effectiveStudentId,
+        student_name: studentName,
+        referral_code: effectiveCode,
+        amount: amt,
+        currency: 'INR',
+        payment_method: withdrawMethod,
+        upi_id: withdrawMethod === 'UPI' ? upiId.trim() : undefined,
+        phone: mobileNumber.trim(),
+        bank_account: withdrawMethod === 'BANK_TRANSFER' ? bankAccountNumber.trim() : undefined,
+        ifsc_code: withdrawMethod === 'BANK_TRANSFER' ? ifscCode.trim().toUpperCase() : undefined,
+        branch_name: withdrawMethod === 'BANK_TRANSFER' ? branchName.trim() : undefined,
+        status: 'PENDING',
+        utr_ref: 'Processing (Within 20 Hours)',
+        notes: `Student requested withdrawal of ${formatCurrency(amt)} via ${withdrawMethod}`
+      });
+
+      const newRecord: ReferralPayoutRecord = {
+        id: createdItem.payout_id,
+        date: 'Just now',
+        amount: amt,
+        paymentMode: withdrawMethod === 'UPI' ? 'UPI Transfer' : 'Bank NEFT Transfer',
+        account: withdrawMethod === 'UPI' ? upiId.trim() : `A/C ••••${bankAccountNumber.slice(-4)} (${ifscCode.toUpperCase()})`,
+        status: 'PENDING',
+        utrRef: 'Processing (Within 20 Hours)'
+      };
+
+      setPayouts((prev) => [newRecord, ...prev]);
+      setWithdrawModalOpen(false);
+      setWithdrawAmount('');
+      setActiveTab('payouts');
+      onToast?.(`Withdrawal request of ${formatCurrency(amt)} submitted! Transfer will be completed within 20 hours.`, 'success');
+    } catch (err) {
+      setWithdrawError(err instanceof Error ? err.message : 'Failed to submit withdrawal request.');
+    } finally {
+      setSubmittingWithdrawal(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Banner Card */}
@@ -579,11 +688,15 @@ export default function StudentReferralPage({
 
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-            <span>Eligible / Pending Rewards</span>
-            <Award className="w-4 h-4 text-indigo-600" />
+            <span>Available Balance</span>
+            <Wallet className="w-4 h-4 text-emerald-600" />
           </div>
-          <p className="mt-3 text-2xl font-black text-indigo-600">{formatCurrency(dashboard.eligible_rewards)}</p>
-          <p className="mt-1 text-[11px] text-indigo-600 font-semibold">Ready for next payout cycle</p>
+          <p className="mt-3 text-2xl font-black text-slate-900">{formatCurrency(availableBalance)}</p>
+          <p className="mt-1 text-[11px] text-emerald-600 font-semibold">
+            {pendingWithdrawalTotal > 0
+              ? `₹${pendingWithdrawalTotal} processing (within 20h)`
+              : 'Eligible for instant withdrawal'}
+          </p>
         </article>
 
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
@@ -594,6 +707,61 @@ export default function StudentReferralPage({
           <p className="mt-3 text-2xl font-black text-emerald-700">{formatCurrency(dashboard.paid_rewards)}</p>
           <p className="mt-1 text-[11px] text-emerald-600 font-semibold">Direct UPI / Bank settled</p>
         </article>
+      </section>
+
+      {/* Withdraw Earnings Action Banner */}
+      <section className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50/80 via-white to-emerald-50/60 p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start sm:items-center gap-3.5">
+          <div
+            className={`p-3 rounded-2xl flex items-center justify-center shrink-0 ${
+              isWithdrawalUnlocked ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-400'
+            }`}
+          >
+            {isWithdrawalUnlocked ? <Wallet className="w-6 h-6" /> : <Lock className="w-6 h-6" />}
+          </div>
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-extrabold text-slate-900">Withdraw Earnings</h3>
+              {isWithdrawalUnlocked ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  <CheckCircle2 size={12} /> Unlocked · Available: {formatCurrency(availableBalance)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                  <Lock size={12} /> Locked
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed max-w-xl">
+              {level1Referrals === 0
+                ? 'Unlockable after achieving at least 1 Level 1 referral. Share your AK Referral Code to get direct classmates to register and purchase.'
+                : availableBalance <= 0
+                ? 'Level 1 unlocked! Payout becomes available as soon as your referrals generate eligible rewards.'
+                : 'Your withdrawal request will be processed and transferred within 20 hours to your verified UPI ID or Bank account.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-3">
+          <button
+            onClick={() => {
+              if (isWithdrawalUnlocked) {
+                setWithdrawAmount(String(availableBalance));
+                setWithdrawError('');
+                setWithdrawModalOpen(true);
+              }
+            }}
+            disabled={!isWithdrawalUnlocked}
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-bold shadow-xs transition-all ${
+              isWithdrawalUnlocked
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer active:scale-95 shadow-emerald-600/20 shadow-md'
+                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+            }`}
+          >
+            {isWithdrawalUnlocked ? <Wallet size={16} /> : <Lock size={16} />}
+            <span>Withdraw Earnings</span>
+          </button>
+        </div>
       </section>
 
       {/* Navigation Sub-Tabs */}
@@ -806,7 +974,7 @@ export default function StudentReferralPage({
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                              <Clock size={12} /> Processing
+                              <Clock size={12} /> Processing (Within 20 Hours)
                             </span>
                           )}
                         </td>
@@ -876,6 +1044,258 @@ export default function StudentReferralPage({
             </div>
           )}
         </section>
+      )}
+
+      {/* Interactive Withdrawal Request Form Modal */}
+      {withdrawModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs animate-in fade-in duration-200"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !submittingWithdrawal) setWithdrawModalOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="withdraw-modal-title"
+            className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Wallet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 id="withdraw-modal-title" className="text-base font-extrabold text-slate-900">
+                    Withdraw Referral Earnings
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Available Balance: <strong className="text-emerald-600 font-mono">{formatCurrency(availableBalance)}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setWithdrawModalOpen(false)}
+                disabled={submittingWithdrawal}
+                aria-label="Close modal"
+                className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleWithdrawSubmit} className="p-6 space-y-4">
+              {/* Notice Banner */}
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 flex items-start gap-2.5 text-amber-900 text-xs">
+                <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div className="leading-relaxed">
+                  <p className="font-bold text-amber-900">
+                    Your withdrawal request will be processed and transferred within 20 hours.
+                  </p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    Transfers are made directly via instant UPI or NEFT. You will receive a transaction UTR reference upon completion.
+                  </p>
+                </div>
+              </div>
+
+              {withdrawError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700 flex items-center gap-2 font-semibold">
+                  <AlertCircle size={15} className="shrink-0" />
+                  <span>{withdrawError}</span>
+                </div>
+              )}
+
+              {/* Amount Input */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="withdraw-amount-input" className="text-xs font-bold text-slate-700">
+                    Withdrawal Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawAmount(String(availableBalance))}
+                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800"
+                  >
+                    Withdraw All ({formatCurrency(availableBalance)})
+                  </button>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₹</span>
+                  <input
+                    id="withdraw-amount-input"
+                    type="number"
+                    min="1"
+                    max={availableBalance}
+                    step="1"
+                    required
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    placeholder={`e.g. ${availableBalance}`}
+                    className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Payment Method Switcher */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-bold text-slate-700">Primary Payment Method</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawMethod('UPI')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                      withdrawMethod === 'UPI'
+                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 shadow-xs'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    UPI Transfer (Primary)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWithdrawMethod('BANK_TRANSFER')}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center ${
+                      withdrawMethod === 'BANK_TRANSFER'
+                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 shadow-xs'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    Bank Account (Optional/Alt)
+                  </button>
+                </div>
+              </div>
+
+              {/* UPI Fields */}
+              {withdrawMethod === 'UPI' && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1">
+                    <label htmlFor="upi-id-input" className="text-xs font-semibold text-slate-700">
+                      Primary UPI ID (VPA) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="upi-id-input"
+                      type="text"
+                      required
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      placeholder="e.g. studentname@okaxis or mobile@upi"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="mobile-input" className="text-xs font-semibold text-slate-700">
+                      Mobile Number <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="mobile-input"
+                      type="tel"
+                      required
+                      value={mobileNumber}
+                      onChange={(e) => setMobileNumber(e.target.value)}
+                      placeholder="e.g. 7004273758"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Bank Details Fields (Optional / Alternative) */}
+              {withdrawMethod === 'BANK_TRANSFER' && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1">
+                    <label htmlFor="bank-acc-input" className="text-xs font-semibold text-slate-700">
+                      Bank Account Number <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="bank-acc-input"
+                      type="text"
+                      required
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value)}
+                      placeholder="Enter full bank account number"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label htmlFor="ifsc-input" className="text-xs font-semibold text-slate-700">
+                        IFSC Code <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="ifsc-input"
+                        type="text"
+                        required
+                        value={ifscCode}
+                        onChange={(e) => setIfscCode(e.target.value.toUpperCase())}
+                        placeholder="e.g. SBIN0001234"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500 font-mono uppercase"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label htmlFor="branch-input" className="text-xs font-semibold text-slate-700">
+                        Branch Name (Optional)
+                      </label>
+                      <input
+                        id="branch-input"
+                        type="text"
+                        value={branchName}
+                        onChange={(e) => setBranchName(e.target.value)}
+                        placeholder="e.g. Ranchi Main"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor="bank-mobile-input" className="text-xs font-semibold text-slate-700">
+                      Mobile Number <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="bank-mobile-input"
+                      type="tel"
+                      required
+                      value={mobileNumber}
+                      onChange={(e) => setMobileNumber(e.target.value)}
+                      placeholder="e.g. 7004273758"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setWithdrawModalOpen(false)}
+                  disabled={submittingWithdrawal}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingWithdrawal}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-xs font-bold text-white transition-all shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  {submittingWithdrawal ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wallet size={14} />
+                      <span>Confirm & Withdraw {withdrawAmount ? `₹${withdrawAmount}` : ''}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

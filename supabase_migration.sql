@@ -22,3 +22,29 @@ CREATE INDEX IF NOT EXISTS idx_verifications_status ON public.verifications(stat
 CREATE INDEX IF NOT EXISTS idx_verifications_user_id ON public.verifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_verifications_email ON public.verifications(email);
 
+-- Payouts and Student Withdrawal Requests Table
+CREATE TABLE IF NOT EXISTS public.payouts (
+  id BIGSERIAL PRIMARY KEY,
+  payout_id TEXT UNIQUE NOT NULL,
+  student_id TEXT NOT NULL,
+  student_name TEXT,
+  referral_code TEXT NOT NULL,
+  amount NUMERIC(10, 2) NOT NULL,
+  currency TEXT DEFAULT 'INR',
+  payment_method TEXT NOT NULL DEFAULT 'UPI', -- 'UPI' or 'BANK_TRANSFER'
+  upi_id TEXT,
+  phone TEXT,
+  bank_account TEXT,
+  ifsc_code TEXT,
+  branch_name TEXT,
+  status TEXT DEFAULT 'PENDING', -- 'PENDING', 'PROCESSING', 'PAID', 'REJECTED'
+  utr_ref TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payouts_student_id ON public.payouts(student_id);
+CREATE INDEX IF NOT EXISTS idx_payouts_referral_code ON public.payouts(referral_code);
+CREATE INDEX IF NOT EXISTS idx_payouts_status ON public.payouts(status);
+

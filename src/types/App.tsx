@@ -2543,6 +2543,8 @@ export default function App() {
       onSessionExpired={handleStudentSessionExpired}
       onLogin={() => navigate('login')}
       studentId={currentStudentId}
+      studentName={currentStudentName}
+      studentMobile={student.mobile || '7004273758'}
       referralCode={currentAkReferralCode}
       onToast={(msg, type) => showToast(msg, type)}
     />

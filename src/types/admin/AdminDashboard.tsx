@@ -266,7 +266,7 @@ function AdminSidebar({
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white"><ShieldCheck size={19} /></span>
             <div>
-              <p className="text-sm font-extrabold text-slate-900">CampusProjects</p>
+              <p className="text-sm font-extrabold text-slate-900">Uvikart</p>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Administration</p>
             </div>
           </div>

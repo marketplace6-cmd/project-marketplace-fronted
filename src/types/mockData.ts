@@ -59,13 +59,14 @@ export const INITIAL_PROJECTS: ProjectDTO[] = [
   }
 ];
 
-// Clean generic student state with zero personal data
+// Default verified student state for Uvikart marketplace
 export const INITIAL_STUDENT: StudentProfile = {
-  id: 'STU-000-000',
-  fullName: '',
-  mobile: '',
-  email: '',
-  collegeName: '',
+  id: 'STU-2026-0001',
+  fullName: 'Mayank Kumar',
+  mobile: '+91 98765 43210',
+  email: 'mayank.kumar@student.umu.ac.in',
+  collegeName: 'Usha Martin University',
+  referralCode: 'A7K2',
   authState: 'logged_out',
   role: 'student',
   idDocumentName: '',

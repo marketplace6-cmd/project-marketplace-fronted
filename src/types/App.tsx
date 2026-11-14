@@ -4,7 +4,8 @@ import {
   Lock, FileText, Award, HelpCircle, LogOut, Menu, X, ChevronRight,
   ChevronLeft, Upload, ExternalLink, CreditCard,
   Layers, Code2, Cpu, Smartphone, Database, Cloud, Sparkles,
-  Check, UserCheck, Eye, EyeOff, LayoutDashboard
+  Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2,
+  GraduationCap
 } from 'lucide-react';
 import {
   ProjectCategory, ProjectDTO,
@@ -22,6 +23,7 @@ import { StudentCommerceAPI, StudentOrderRecord } from './commerceService';
 import StudentCommercePanel from './StudentCommercePanel';
 import AdminDashboard from './admin/AdminDashboard';
 import StudentReferralPage from './StudentReferralPage';
+import MentorDashboard from './mentor/MentorDashboard';
 import { ReferralApiError, StudentReferralAPI } from './referralService';
 import { supabase } from '../utils/supabase/client';
 
@@ -45,7 +47,8 @@ type PageRoute =
   | 'privacy'
   | 'terms'
   | 'refund'
-  | 'admin';
+  | 'admin'
+  | 'mentor';
 
 const CATEGORIES: { name: ProjectCategory; icon: React.ReactNode; count: string }[] = [
   { name: 'Web Development', icon: <Code2 className="w-5 h-5 text-indigo-600" />, count: '45+ Projects' },
@@ -66,7 +69,6 @@ export default function App() {
       ? 'signup'
       : 'home';
   });
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [student, setStudent] = useState<StudentProfile>(() => {
     const saved = localStorage.getItem('cpm_student_session');
@@ -95,6 +97,10 @@ export default function App() {
   const [tickets, setTickets] = useState<SupportTicket[]>(INITIAL_TICKETS);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [shareEarnModalOpen, setShareEarnModalOpen] = useState(false);
+  const [copiedProfileCode, setCopiedProfileCode] = useState(false);
+  const [copiedModalCode, setCopiedModalCode] = useState(false);
+  const [copiedModalLink, setCopiedModalLink] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'activity' | 'meetings' | 'referrals' | 'purchases' | 'support'>('overview');
   const referralCodeFromUrl = useMemo(() => {
@@ -105,6 +111,14 @@ export default function App() {
       return '';
     }
   }, []);
+
+  const currentStudentName = student.fullName || 'Mayank Kumar';
+  const currentStudentId = (student.id && student.id !== 'STU-000-000') ? student.id : 'STU-2026-0001';
+  const currentAkReferralCode = student.referralCode || 'A7K2';
+  const currentCollege = student.collegeName || 'Usha Martin University';
+  const currentReferralLink = typeof window !== 'undefined'
+    ? `${window.location.origin}/register?ref=${currentAkReferralCode}`
+    : `https://uvikart.com/register?ref=${currentAkReferralCode}`;
   const [adminUserId, setAdminUserId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [showAdminPassword, setShowAdminPassword] = useState(false);
@@ -209,10 +223,26 @@ export default function App() {
     }
   }, []);
 
+  const copyText = async (value: string): Promise<void> => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return;
+    }
+    const field = document.createElement('textarea');
+    field.value = value;
+    field.setAttribute('readonly', '');
+    field.style.position = 'fixed';
+    field.style.opacity = '0';
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    document.body.removeChild(field);
+    if (!copied) throw new Error('Clipboard access is unavailable in this browser.');
+  };
+
   const navigate = (route: PageRoute) => {
     setCurrentRoute(route);
     setMobileMenuOpen(false);
-    setSidebarOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1302,7 +1332,7 @@ export default function App() {
 
           <div className="relative z-10 pt-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 mt-8">
             <span>{currentSlide.footerNote}</span>
-            <span>CampusProjects Protected Viewer</span>
+            <span>Uvikart Protected Viewer</span>
           </div>
         </div>
 
@@ -1812,22 +1842,48 @@ export default function App() {
     );
   };
 
-  const renderStudentDashboard = () => (
+  const renderStudentDashboard = () => {
+    const studentName = currentStudentName;
+    const studentId = currentStudentId;
+    const akReferralCode = currentAkReferralCode;
+    const college = currentCollege;
+
+    return (
     <div className="max-w-7xl mx-auto py-8 px-4">
       <div className="grid lg:grid-cols-12 gap-6">
         <div className="lg:col-span-3 bg-indigo-950 text-white rounded-2xl p-5 flex flex-col justify-between">
           <div className="space-y-6">
-            <div className="pb-4 border-b border-white/10">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-lg flex items-center justify-center mb-3">
-                {student.fullName.charAt(0)}
+            {/* User Identity Section (Avatar, Name, Student ID, AK Referral Code, Status Badge) */}
+            <div className="pb-4 border-b border-white/10 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 font-extrabold text-xl flex items-center justify-center shadow-md">
+                  {studentName.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-extrabold text-base tracking-tight text-white truncate">{studentName}</h2>
+                  <p className="text-xs text-indigo-200 truncate">{college}</p>
+                </div>
               </div>
-              <h2 className="font-bold text-base">{student.fullName}</h2>
-              <p className="text-xs text-indigo-200 mt-0.5">{student.collegeName}</p>
-              <span className={`mt-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                student.authState === 'verified' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
-              }`}>
-                <ShieldCheck className="w-3.5 h-3.5" /> {student.authState.toUpperCase().replace('_', ' ')}
-              </span>
+
+              {/* Verified Student Status Badge */}
+              <div className="pt-0.5">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  Verified Student
+                </span>
+              </div>
+
+              {/* Student ID & AK Referral Code Badges */}
+              <div className="pt-2 border-t border-white/10 grid grid-cols-2 gap-2 text-[11px]">
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10">
+                  <div className="text-[10px] uppercase font-bold text-indigo-300 tracking-wider">Student ID</div>
+                  <div className="font-mono font-extrabold text-white tracking-wide truncate mt-0.5">{studentId}</div>
+                </div>
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10">
+                  <div className="text-[10px] uppercase font-bold text-indigo-300 tracking-wider">AK Referral Code</div>
+                  <div className="font-mono font-extrabold text-emerald-300 tracking-wider truncate mt-0.5">{akReferralCode}</div>
+                </div>
+              </div>
             </div>
 
             <nav className="space-y-1">
@@ -1910,30 +1966,83 @@ export default function App() {
             <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-6">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Student Profile & Preview Statistics</h3>
-                  <p className="text-xs text-slate-500">Authoritative profile state synced with backend verification</p>
+                  <h3 className="text-lg font-bold text-slate-900">Student Profile Details</h3>
+                  <p className="text-xs text-slate-500">Official student identity and academic verification credentials</p>
                 </div>
                 {renderHeartCredits()}
               </div>
-              <div className="grid sm:grid-cols-2 gap-4 text-sm">
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="text-xs text-slate-500">Full Name</div>
-                  <div className="font-bold text-slate-900">{student.fullName}</div>
+
+              {/* Profile Details Grid */}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">Full Name</div>
+                  <div className="font-bold text-slate-900 text-base mt-1">{studentName}</div>
                 </div>
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="text-xs text-slate-500">College / University</div>
-                  <div className="font-bold text-slate-900">{student.collegeName}</div>
+
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">College / University</div>
+                  <div className="font-bold text-slate-900 text-base mt-1">{college}</div>
                 </div>
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="text-xs text-slate-500">Mobile & Email</div>
-                  <div className="font-bold text-slate-900">{student.mobile} • {student.email}</div>
+
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">Student ID</div>
+                  <div className="font-mono font-extrabold text-indigo-700 text-base mt-1">{studentId}</div>
                 </div>
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="text-xs text-slate-500">90-Day Preview Reset Schedule</div>
-                  <div className="font-bold text-indigo-700">
-                    Used: {student.previewStats.usedPreviews} • Remaining: {student.previewStats.remainingPreviews} • Next Reset: {student.previewStats.nextResetDate}
+
+                <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200">
+                  <div className="text-xs font-semibold text-emerald-700">AK Referral Code</div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="font-mono font-black text-emerald-900 text-lg">{akReferralCode}</span>
+                    <button
+                      onClick={() => {
+                        void copyText(akReferralCode);
+                        setCopiedProfileCode(true);
+                        setTimeout(() => setCopiedProfileCode(false), 2500);
+                        showToast(`AK Referral Code ${akReferralCode} copied!`, 'success');
+                      }}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                    >
+                      {copiedProfileCode ? <Check className="w-3 h-3 text-white" /> : <Copy className="w-3 h-3" />}
+                      {copiedProfileCode ? 'Copied!' : 'Copy'}
+                    </button>
                   </div>
                 </div>
+
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">Verification Status</div>
+                  <div className="mt-1">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      Verified Student
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-xs font-semibold text-slate-500">Mobile & Email</div>
+                  <div className="font-medium text-slate-800 text-xs mt-1 truncate">
+                    {student.mobile || '+91 98765 43210'}
+                  </div>
+                  <div className="text-xs text-slate-500 truncate">
+                    {student.email || 'mayank.kumar@student.umu.ac.in'}
+                  </div>
+                </div>
+              </div>
+
+              {/* 90-Day Reset Schedule Card */}
+              <div className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div>
+                  <span className="font-bold text-indigo-950">90-Day Preview Reset Schedule:</span>{' '}
+                  <span className="text-indigo-800">
+                    Used: {student.previewStats.usedPreviews} • Remaining: {student.previewStats.remainingPreviews} • Next Reset: {student.previewStats.nextResetDate}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShareEarnModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 hover:underline"
+                >
+                  <Share2 className="w-3.5 h-3.5" /> Share & Earn Rewards &rarr;
+                </button>
               </div>
 
               {/* MODIFIED: Upload ID Card Front & Back Panel */}
@@ -2030,13 +2139,17 @@ export default function App() {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderReferralSection = () => (
     <StudentReferralPage
       accessToken={student.accessToken}
       onSessionExpired={handleStudentSessionExpired}
       onLogin={() => navigate('login')}
+      studentId={currentStudentId}
+      referralCode={currentAkReferralCode}
+      onToast={(msg, type) => showToast(msg, type)}
     />
   );
 
@@ -2286,113 +2399,348 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Toast Notification Banner */}
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-sm bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl border border-slate-700 flex items-center gap-3">
+        <div className="fixed bottom-5 right-5 z-[60] max-w-sm bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl border border-slate-700 flex items-center gap-3">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span className="text-xs font-medium">{toast.message}</span>
         </div>
       )}
 
-      {/* Feature Sidebar Drawer (Collapsible Feature Panel) */}
-      {currentRoute !== 'admin' && sidebarOpen && (
-        <div className="fixed inset-0 z-50 flex">
+      {/* Share & Earn Modal */}
+      {shareEarnModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}
           <div
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+            onClick={() => setShareEarnModalOpen(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+            aria-label="Close Share and Earn modal"
           />
-          {/* Sidebar Drawer */}
-          <div className="relative w-80 bg-slate-900 text-white p-6 flex flex-col justify-between z-10 shadow-2xl">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+
+          {/* Modal Card */}
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header banner */}
+            <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-950 p-6 text-white relative">
+              <button
+                onClick={() => setShareEarnModalOpen(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/20 text-emerald-300 text-xs font-bold mb-3 border border-emerald-400/30">
+                <Sparkles className="w-3.5 h-3.5" /> Uvikart Rewards Program
+              </div>
+              <h3 className="text-xl font-extrabold tracking-tight">Share & Earn Rewards</h3>
+              <p className="text-xs text-indigo-200 mt-1 max-w-md">
+                Invite fellow classmates and students to Uvikart. Earn real cash rewards for each verified friend who joins and purchases a project across 4 referral tiers.
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5">
+              {/* AK Referral Code Box */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Your AK Referral Code</span>
+                  <span className="text-[11px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Permanent Code
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                  <span className="font-mono text-2xl font-black text-indigo-950 tracking-wider">
+                    {currentAkReferralCode}
+                  </span>
+                  <button
+                    onClick={() => {
+                      void copyText(currentAkReferralCode);
+                      setCopiedModalCode(true);
+                      setTimeout(() => setCopiedModalCode(false), 2500);
+                      showToast(`AK Referral Code ${currentAkReferralCode} copied!`, 'success');
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+                  >
+                    {copiedModalCode ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                    {copiedModalCode ? 'Copied!' : 'Copy Code'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Referral Link Box */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">Personal Referral Link</label>
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">
-                    C
+                  <input
+                    type="text"
+                    readOnly
+                    value={currentReferralLink}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 font-mono focus:outline-none"
+                  />
+                  <button
+                    onClick={() => {
+                      void copyText(currentReferralLink);
+                      setCopiedModalLink(true);
+                      setTimeout(() => setCopiedModalLink(false), 2500);
+                      showToast('Referral link copied to clipboard!', 'success');
+                    }}
+                    className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition-colors flex items-center gap-1"
+                    title="Copy Link"
+                  >
+                    {copiedModalLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    <span className="text-xs font-bold">{copiedModalLink ? 'Copied!' : ''}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Share Actions */}
+              <div className="space-y-2">
+                <button
+                  onClick={async () => {
+                    if (navigator.share) {
+                      try {
+                        await navigator.share({
+                          title: 'Join Uvikart with my code ' + currentAkReferralCode,
+                          text: `Explore verified college projects on Uvikart! Use my AK Referral Code ${currentAkReferralCode} to get started:`,
+                          url: currentReferralLink
+                        });
+                        showToast('Referral link shared successfully!', 'success');
+                      } catch (err) {
+                        if (err instanceof DOMException && err.name === 'AbortError') return;
+                        void copyText(currentReferralLink);
+                        showToast('Referral link copied to clipboard!', 'info');
+                      }
+                    } else {
+                      void copyText(currentReferralLink);
+                      showToast('Native sharing not supported here. Referral link copied!', 'info');
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl shadow-md transition-colors"
+                >
+                  <Share2 className="w-4 h-4" /> Share via WhatsApp / Social
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    onClick={() => {
+                      setShareEarnModalOpen(false);
+                      setDashboardTab('referrals');
+                      navigate('dashboard');
+                    }}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
+                  >
+                    View detailed Referral Rewards (Levels 1–4) & Payout History &rarr;
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clean White Navigation Drawer (Mobile) */}
+      {currentRoute !== 'admin' && mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden">
+          {/* Backdrop */}
+          <div
+            onClick={() => setMobileMenuOpen(false)}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
+            aria-label="Close navigation"
+          />
+          {/* White Drawer Panel */}
+          <div className="relative w-80 max-w-[85vw] bg-white text-slate-900 p-6 flex flex-col justify-between z-10 shadow-2xl h-full border-r border-slate-200 overflow-y-auto">
+            <div className="space-y-6">
+              {/* Drawer Header & Branding */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <button onClick={() => navigate('home')} className="flex items-center gap-2.5 text-left">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-extrabold text-lg shadow-sm">
+                    U
                   </div>
                   <div>
-                    <span className="font-bold text-sm">Feature Directory</span>
-                    <span className="block text-[10px] text-emerald-400">All Marketplace Modules</span>
+                    <span className="font-extrabold text-base tracking-tight text-slate-900">Uvikart</span>
+                    <span className="block text-[10px] font-mono text-emerald-600 font-semibold -mt-1">
+                      VERIFIED STUDENT MARKETPLACE
+                    </span>
                   </div>
-                </div>
+                </button>
                 <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                  aria-label="Close menu"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <nav className="space-y-1.5 text-xs font-semibold">
+              {/* Heart Credits indicator */}
+              <div className="pb-2">
+                {renderHeartCredits('sm')}
+              </div>
+
+              {/* Navigation Links */}
+              <nav className="space-y-1.5 text-xs font-semibold text-slate-700">
                 <button
                   onClick={() => navigate('home')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'home'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 hover:text-slate-900'
+                  }`}
                 >
-                  <LayoutDashboard className="w-4 h-4 text-indigo-400" /> Home & Overview
+                  <LayoutDashboard className="w-4 h-4 text-indigo-500" />
+                  <span>Home</span>
                 </button>
+
                 <button
                   onClick={() => navigate('explore')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'explore'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 hover:text-slate-900'
+                  }`}
                 >
-                  <Search className="w-4 h-4 text-emerald-400" /> Explore Catalogue & Filters
+                  <Search className="w-4 h-4 text-emerald-500" />
+                  <span>Explore Projects</span>
                 </button>
+
                 <button
                   onClick={() => navigate('selected-projects')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'selected-projects'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 hover:text-slate-900'
+                  }`}
                 >
-                  <CheckCircle2 className="w-4 h-4 text-amber-400" /> Selected Projects ({student.selectedProjectIds.length}/3)
+                  <CheckCircle2 className="w-4 h-4 text-amber-500" />
+                  <span>Selected Projects ({student.selectedProjectIds.length}/3)</span>
                 </button>
+
                 <button
                   onClick={() => navigate('schedule-meet')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'schedule-meet'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 hover:text-slate-900'
+                  }`}
                 >
-                  <Calendar className="w-4 h-4 text-violet-400" /> 5-Min Google Meet Scheduler
+                  <Calendar className="w-4 h-4 text-violet-500" />
+                  <span>Schedule 5-Min Meet</span>
                 </button>
+
                 <button
                   onClick={() => navigate('dashboard')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'dashboard'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 hover:text-slate-900'
+                  }`}
                 >
-                  <UserCheck className="w-4 h-4 text-cyan-400" /> Student Profile Dashboard
+                  <UserCheck className="w-4 h-4 text-cyan-500" />
+                  <span>Student Profile Dashboard</span>
                 </button>
-                <button
-                  onClick={() => navigate('referrals')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
-                >
-                  <Award className="w-4 h-4 text-rose-400" /> Referral & Reward Hub
-                </button>
+
                 <button
                   onClick={() => navigate('support')}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition-colors"
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'support'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 hover:text-slate-900'
+                  }`}
                 >
-                  <HelpCircle className="w-4 h-4 text-sky-400" /> Customer Support Desk
+                  <HelpCircle className="w-4 h-4 text-sky-500" />
+                  <span>Customer Support</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setShareEarnModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-colors text-left hover:bg-emerald-50 text-slate-700 hover:text-emerald-700"
+                >
+                  <div className="flex items-center gap-3">
+                    <Share2 className="w-4 h-4 text-emerald-500" />
+                    <span className="font-semibold">Share & Earn</span>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                    Rewards
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigate('verification')}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'verification'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 text-indigo-600 font-bold'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                  <span>Student ID Verification</span>
+                </button>
+
+                <button
+                  onClick={() => navigate('mentor')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-colors text-left ${
+                    currentRoute === 'mentor'
+                      ? 'bg-indigo-50 text-indigo-600 font-bold'
+                      : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <GraduationCap className="w-4 h-4 text-indigo-600" />
+                    <span className="font-semibold">Mentor Dashboard</span>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                    Direct Deals
+                  </span>
                 </button>
               </nav>
             </div>
 
-            <div className="pt-4 border-t border-slate-800 text-[11px] text-slate-400">
-              CampusProjects v2.4 • Client Handover Build
+            {/* Bottom Auth Section */}
+            <div className="pt-4 border-t border-slate-100">
+              {student.authState === 'logged_out' ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => navigate('login')}
+                    className="w-full py-2.5 text-center text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => navigate('signup')}
+                    className="w-full py-2.5 text-center text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-xs"
+                  >
+                    Sign Up
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => navigate('dashboard')}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">
+                      {student.fullName.charAt(0)}
+                    </span>
+                    <span className="text-xs font-bold text-slate-800">{student.fullName || 'Student'}</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-indigo-600">View Profile &rarr;</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
       {/* A. Navigation Bar */}
-      <header className={currentRoute === 'admin' ? 'hidden' : 'bg-white border-b border-slate-200 sticky top-0 z-40'}>
+      <header className={(currentRoute === 'admin' || currentRoute === 'mentor') ? 'hidden' : 'bg-white border-b border-slate-200 sticky top-0 z-40'}>
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            {/* Sidebar Toggle Button */}
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-              title="Open Feature Sidebar"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-
             <button onClick={() => navigate('home')} className="flex items-center gap-2 text-left">
               <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-extrabold text-lg shadow-sm">
-                C
+                U
               </div>
               <div>
-                <span className="font-extrabold text-base tracking-tight text-slate-900">CampusProjects</span>
+                <span className="font-extrabold text-base tracking-tight text-slate-900">Uvikart</span>
                 <span className="block text-[10px] font-mono text-emerald-600 font-semibold -mt-1">
                   VERIFIED STUDENT MARKETPLACE
                 </span>
@@ -2414,6 +2762,12 @@ export default function App() {
               </button>
               <button onClick={() => navigate('support')} className={currentRoute === 'support' ? 'text-indigo-600' : 'hover:text-slate-900'}>
                 Customer Support
+              </button>
+              <button
+                onClick={() => setShareEarnModalOpen(true)}
+                className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-extrabold"
+              >
+                <Share2 className="w-3.5 h-3.5" /> Share & Earn
               </button>
             </nav>
           </div>
@@ -2447,30 +2801,27 @@ export default function App() {
                 <span className="text-xs font-bold text-slate-800">Profile</span>
               </button>
             )}
+
+            {/* Quick Mentor Portal button */}
+            <button
+              onClick={() => navigate('mentor')}
+              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 transition-colors"
+              title="Switch to Mentor Dashboard"
+            >
+              <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Mentor Portal</span>
+            </button>
           </div>
 
-          {/* Mobile Hamburger */}
+          {/* Mobile Navigation Toggle Button */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg text-slate-700 hover:bg-slate-100"
+            className="md:hidden p-2 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors"
+            aria-label="Toggle navigation menu"
           >
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
-
-        {/* Collapsible Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-t border-slate-200 px-4 py-4 space-y-3 text-sm font-bold">
-            <div className="pb-2">{renderHeartCredits('sm')}</div>
-            <button onClick={() => navigate('home')} className="block w-full text-left py-1.5">Home</button>
-            <button onClick={() => navigate('explore')} className="block w-full text-left py-1.5">Explore Projects</button>
-            <button onClick={() => navigate('selected-projects')} className="block w-full text-left py-1.5">Selected Projects ({student.selectedProjectIds.length}/3)</button>
-            <button onClick={() => navigate('schedule-meet')} className="block w-full text-left py-1.5">Schedule 5-Min Meet</button>
-            <button onClick={() => navigate('dashboard')} className="block w-full text-left py-1.5">Student Profile Dashboard</button>
-            <button onClick={() => navigate('support')} className="block w-full text-left py-1.5">Customer Support</button>
-            <button onClick={() => navigate('verification')} className="block w-full text-left py-1.5 text-indigo-600">Student ID Verification</button>
-          </div>
-        )}
       </header>
 
       {/* Main Content Router */}
@@ -2498,13 +2849,18 @@ export default function App() {
         {currentRoute === 'terms' && renderLegalPage('terms')}
         {currentRoute === 'refund' && renderLegalPage('refund')}
         {currentRoute === 'admin' && renderAdminPanel()}
+        {currentRoute === 'mentor' && (
+          <MentorDashboard
+            onNavigate={navigate}
+          />
+        )}
       </main>
 
       {/* G. Footer */}
-      <footer className={currentRoute === 'admin' ? 'hidden' : 'bg-slate-900 text-slate-400 py-10 px-4 border-t border-slate-800 mt-16'}>
+      <footer className={(currentRoute === 'admin' || currentRoute === 'mentor') ? 'hidden' : 'bg-slate-900 text-slate-400 py-10 px-4 border-t border-slate-800 mt-16'}>
         <div className="max-w-7xl mx-auto grid sm:grid-cols-2 lg:grid-cols-4 gap-8 text-xs">
           <div className="space-y-2">
-            <div className="font-extrabold text-white text-base">CampusProjects</div>
+            <div className="font-extrabold text-white text-base">Uvikart</div>
             <p className="leading-relaxed">
               Verified college & university project marketplace. Evaluate watermarked PPT previews safely and book 1-on-1 guidance sessions.
             </p>
@@ -2516,6 +2872,7 @@ export default function App() {
               <li><button onClick={() => navigate('verification')} className="hover:text-white">Student ID Verification</button></li>
               <li><button onClick={() => navigate('selected-projects')} className="hover:text-white">Selected Projects (Max 3)</button></li>
               <li><button onClick={() => navigate('referrals')} className="hover:text-white">Referral Program</button></li>
+              <li><button onClick={() => navigate('mentor')} className="hover:text-white flex items-center gap-1"><GraduationCap size={13} className="text-indigo-400" /> Mentor Portal</button></li>
             </ul>
           </div>
           <div className="space-y-2">
@@ -2539,7 +2896,7 @@ export default function App() {
           </div>
         </div>
         <div className="max-w-7xl mx-auto pt-8 mt-8 border-t border-slate-800 text-center text-xs">
-          © {new Date().getFullYear()} CampusProjects Marketplace. All rights reserved.
+          © {new Date().getFullYear()} Uvikart Marketplace. All rights reserved.
         </div>
       </footer>
     </div>

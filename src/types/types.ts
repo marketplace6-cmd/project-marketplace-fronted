@@ -91,6 +91,7 @@ export interface StudentProfile {
   mobile: string;
   email: string;
   collegeName: string;
+  referralCode?: string;
   authState: AuthState;
   role: 'student' | 'admin';
   idDocumentName?: string;

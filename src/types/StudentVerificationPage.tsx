@@ -114,26 +114,50 @@ export default function StudentVerificationPage({
     return () => window.clearTimeout(timer);
   }, [refresh]);
 
+  const isValidImageFormat = (file: File) => {
+    const validMimes = ['image/png', 'image/jpeg', 'image/jpg'];
+    const validExts = /\.(png|jpe?g)$/i;
+    return validMimes.includes(file.type.toLowerCase()) || validExts.test(file.name);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] || null;
-    setFile(picked);
-    if (picked && picked.type.startsWith('image/')) {
-      const url = URL.createObjectURL(picked);
-      setFilePreview(url);
-    } else {
+    if (!picked) {
+      setFile(null);
       setFilePreview('');
+      return;
     }
+    if (!isValidImageFormat(picked) || picked.size > 50 * 1024) {
+      e.target.value = '';
+      setFile(null);
+      setFilePreview('');
+      setError('File size must be 50 KB or below and in PNG/JPG format.');
+      return;
+    }
+    setError('');
+    setFile(picked);
+    const url = URL.createObjectURL(picked);
+    setFilePreview(url);
   };
 
   const handleBackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] || null;
-    setBackFile(picked);
-    if (picked && picked.type.startsWith('image/')) {
-      const url = URL.createObjectURL(picked);
-      setBackFilePreview(url);
-    } else {
+    if (!picked) {
+      setBackFile(null);
       setBackFilePreview('');
+      return;
     }
+    if (!isValidImageFormat(picked) || picked.size > 50 * 1024) {
+      e.target.value = '';
+      setBackFile(null);
+      setBackFilePreview('');
+      setError('File size must be 50 KB or below and in PNG/JPG format.');
+      return;
+    }
+    setError('');
+    setBackFile(picked);
+    const url = URL.createObjectURL(picked);
+    setBackFilePreview(url);
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -146,12 +170,12 @@ export default function StudentVerificationPage({
       setError('Choose a student ID document and complete the verification challenge.');
       return;
     }
-    if (!['image/jpeg', 'image/png', 'application/pdf'].includes(file.type)) {
-      setError('Upload a JPEG, PNG, or PDF document.');
+    if (!isValidImageFormat(file) || file.size > 50 * 1024) {
+      setError('File size must be 50 KB or below and in PNG/JPG format.');
       return;
     }
-    if (file.size > 5_000_000) {
-      setError('The document must be no larger than 5 MB.');
+    if (backFile && (!isValidImageFormat(backFile) || backFile.size > 50 * 1024)) {
+      setError('File size must be 50 KB or below and in PNG/JPG format.');
       return;
     }
     const answer = Number(puzzleAnswer);
@@ -307,17 +331,21 @@ export default function StudentVerificationPage({
                   <label className="block text-xs font-semibold text-slate-700">Upload ID Card (Front Side)
                     <span className="mt-1 flex flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3">
                       <Upload size={18} className="text-indigo-600" />
-                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFileChange} required={!verification} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
+                      <input type="file" accept="image/png, image/jpeg" onChange={handleFileChange} required={!verification} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
                     </span>
-                    {file && <span className="mt-1 block font-normal text-slate-500 text-[11px]">{file.name} · {(file.size / 1024).toFixed(0)} KB</span>}
+                    <span className="mt-1 block font-normal text-slate-500 text-[11px]">
+                      {file ? `${file.name} · ${(file.size / 1024).toFixed(0)} KB` : 'PNG or JPG only · Maximum 50 KB'}
+                    </span>
                   </label>
 
                   <label className="block text-xs font-semibold text-slate-700">Upload ID Card (Back Side)
                     <span className="mt-1 flex flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3">
                       <Upload size={18} className="text-indigo-600" />
-                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleBackFileChange} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
+                      <input type="file" accept="image/png, image/jpeg" onChange={handleBackFileChange} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
                     </span>
-                    {backFile && <span className="mt-1 block font-normal text-slate-500 text-[11px]">{backFile.name} · {(backFile.size / 1024).toFixed(0)} KB</span>}
+                    <span className="mt-1 block font-normal text-slate-500 text-[11px]">
+                      {backFile ? `${backFile.name} · ${(backFile.size / 1024).toFixed(0)} KB` : 'PNG or JPG only · Maximum 50 KB'}
+                    </span>
                   </label>
                 </div>
 

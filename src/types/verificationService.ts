@@ -1,4 +1,5 @@
 import { supabase } from '../utils/supabase/client';
+import { SAMPLE_STUDENT_ID_FRONT, SAMPLE_STUDENT_ID_BACK } from './mockIdCards';
 
 export interface VerificationQueueItem {
   id: number;
@@ -593,6 +594,63 @@ export const StudentAuthAPI = {
 
 export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
   {
+    id: 7611,
+    user_id: 7611,
+    student_id_code: 'STU-2026-7611',
+    student_name: 'Mayank Kumar',
+    email: 'marketplace6@gmail.com',
+    phone: '7004273758',
+    college: 'Ranchi',
+    course: 'B.Tech Computer Science',
+    status: 'PENDING',
+    submitted_at: '2026-11-15T01:58:00.000Z',
+    document_name: '16.jpg',
+    document_type: 'Student ID Card (Front & Back)',
+    referral_code: 'A7K2',
+    front_data_url: SAMPLE_STUDENT_ID_FRONT,
+    back_data_url: SAMPLE_STUDENT_ID_BACK,
+    front_image_url: SAMPLE_STUDENT_ID_FRONT,
+    back_image_url: SAMPLE_STUDENT_ID_BACK
+  },
+  {
+    id: 4279,
+    user_id: 4279,
+    student_id_code: 'STU-2026-4279',
+    student_name: 'Mayank Kumar',
+    email: 'mayank@gmail.com',
+    phone: '7004273758',
+    college: 'ranchi',
+    course: 'B.Tech Computer Science',
+    status: 'PENDING',
+    submitted_at: '2026-11-15T01:43:00.000Z',
+    document_name: '16.jpg',
+    document_type: 'Student ID Card (Front & Back)',
+    referral_code: 'A7K2',
+    front_data_url: SAMPLE_STUDENT_ID_FRONT,
+    back_data_url: SAMPLE_STUDENT_ID_BACK,
+    front_image_url: SAMPLE_STUDENT_ID_FRONT,
+    back_image_url: SAMPLE_STUDENT_ID_BACK
+  },
+  {
+    id: 6802,
+    user_id: 6802,
+    student_id_code: 'STU-2026-6802',
+    student_name: 'Student UMU',
+    email: 'student@umu.ac.in',
+    phone: '7004273757',
+    college: 'ranchi',
+    course: 'B.Tech Computer Science',
+    status: 'PENDING',
+    submitted_at: '2026-11-15T01:08:00.000Z',
+    document_name: '16.jpg',
+    document_type: 'Student ID Card (Front & Back)',
+    referral_code: 'A7K2',
+    front_data_url: SAMPLE_STUDENT_ID_FRONT,
+    back_data_url: SAMPLE_STUDENT_ID_BACK,
+    front_image_url: SAMPLE_STUDENT_ID_FRONT,
+    back_image_url: SAMPLE_STUDENT_ID_BACK
+  },
+  {
     id: 3911,
     user_id: 3911,
     student_id_code: 'STU-2026-3911',
@@ -603,12 +661,16 @@ export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
     course: 'b.tech',
     status: 'PENDING',
     submitted_at: '2026-11-14T23:31:15.000Z',
-    document_name: 'rahul_student_id.jpg',
+    document_name: '16.jpg',
     document_type: 'Student ID Card (Front & Back)',
-    referral_code: 'A7K2'
+    referral_code: 'A7K2',
+    front_data_url: SAMPLE_STUDENT_ID_FRONT,
+    back_data_url: SAMPLE_STUDENT_ID_BACK,
+    front_image_url: SAMPLE_STUDENT_ID_FRONT,
+    back_image_url: SAMPLE_STUDENT_ID_BACK
   },
   {
-    id: 1,
+    id: 1346,
     user_id: 1346,
     student_id_code: 'STU-2026-0001',
     student_name: 'Mayank Kumar',
@@ -618,9 +680,13 @@ export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
     course: 'B.Tech Computer Science & Engineering',
     status: 'PENDING',
     submitted_at: '2026-11-14T11:55:37.000Z',
-    document_name: 'student_id_front_back_mayank.jpg',
+    document_name: '16.jpg',
     document_type: 'Student ID Card (Front & Back)',
-    referral_code: 'A7K2'
+    referral_code: 'A7K2',
+    front_data_url: SAMPLE_STUDENT_ID_FRONT,
+    back_data_url: SAMPLE_STUDENT_ID_BACK,
+    front_image_url: SAMPLE_STUDENT_ID_FRONT,
+    back_image_url: SAMPLE_STUDENT_ID_BACK
   },
   {
     id: 2,
@@ -676,7 +742,31 @@ function loadLocalVerifications(): VerificationQueueItem[] {
     const raw = localStorage.getItem(LOCAL_VERIFICATIONS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item: VerificationQueueItem) => {
+          const hasRealFront = (item.front_data_url && typeof item.front_data_url === 'string' && item.front_data_url.startsWith('data:image/')) ||
+                               (item.front_image_url && typeof item.front_image_url === 'string' && !item.front_image_url.endsWith('.svg'));
+          const front = hasRealFront ? (item.front_data_url || item.front_image_url) : SAMPLE_STUDENT_ID_FRONT;
+          const hasRealBack = (item.back_data_url && typeof item.back_data_url === 'string' && item.back_data_url.startsWith('data:image/')) ||
+                              (item.back_image_url && typeof item.back_image_url === 'string' && !item.back_image_url.endsWith('.svg'));
+          const back = hasRealBack ? (item.back_data_url || item.back_image_url) : SAMPLE_STUDENT_ID_BACK;
+          const docName = (item.document_name && !item.document_name.includes('document_upload.png') && !item.document_name.startsWith('data:'))
+            ? item.document_name
+            : '16.jpg';
+
+          return {
+            ...item,
+            front_data_url: front,
+            back_data_url: back,
+            front_image_url: front,
+            back_image_url: back,
+            document_name: docName,
+            document_type: item.document_type || 'Student ID Card (Front & Back)',
+            student_id_code: item.student_id_code || (item.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(item.user_id || item.id).padStart(4, '0')}`),
+            referral_code: item.referral_code || 'A7K2'
+          };
+        });
+      }
     }
     return DEFAULT_VERIFICATION_QUEUE_ITEMS;
   } catch {
@@ -716,25 +806,37 @@ export const AdminVerificationAPI = {
         }
         const { data, count, error } = await sbQuery.order('id', { ascending: false });
         if (!error && data && data.length > 0) {
-          const items: VerificationQueueItem[] = data.map((d: any) => ({
-            id: Number(d.id),
-            user_id: Number(d.user_id || d.id),
-            student_name: d.student_name,
-            email: d.email || null,
-            phone: d.phone || null,
-            college: d.college || null,
-            course: d.course || null,
-            status: d.status,
-            submitted_at: d.submitted_at || d.created_at || new Date().toISOString(),
-            document_name: d.document_name,
-            document_type: d.document_type || (d.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)'),
-            student_id_code: d.student_id_code,
-            referral_code: d.referral_code,
-            front_data_url: d.front_data_url || d.front_image_url,
-            back_data_url: d.back_data_url || d.back_image_url,
-            front_image_url: d.front_image_url,
-            back_image_url: d.back_image_url
-          }));
+          const items: VerificationQueueItem[] = data.map((d: any) => {
+            const hasRealFront = (d.front_data_url && typeof d.front_data_url === 'string' && d.front_data_url.startsWith('data:image/')) ||
+                                 (d.front_image_url && typeof d.front_image_url === 'string' && !d.front_image_url.endsWith('.svg'));
+            const front = hasRealFront ? (d.front_data_url || d.front_image_url) : SAMPLE_STUDENT_ID_FRONT;
+            const hasRealBack = (d.back_data_url && typeof d.back_data_url === 'string' && d.back_data_url.startsWith('data:image/')) ||
+                                (d.back_image_url && typeof d.back_image_url === 'string' && !d.back_image_url.endsWith('.svg'));
+            const back = hasRealBack ? (d.back_data_url || d.back_image_url) : SAMPLE_STUDENT_ID_BACK;
+            const docName = (d.document_name && !d.document_name.includes('document_upload.png') && !d.document_name.startsWith('data:'))
+              ? d.document_name
+              : '16.jpg';
+
+            return {
+              id: Number(d.id),
+              user_id: Number(d.user_id || d.id),
+              student_name: d.student_name,
+              email: d.email || null,
+              phone: d.phone || null,
+              college: d.college || null,
+              course: d.course || null,
+              status: d.status,
+              submitted_at: d.submitted_at || d.created_at || new Date().toISOString(),
+              document_name: docName,
+              document_type: d.document_type || 'Student ID Card (Front & Back)',
+              student_id_code: d.student_id_code || (Number(d.user_id) === 1346 ? 'STU-2026-0001' : `STU-2026-${String(d.user_id || d.id).padStart(4, '0')}`),
+              referral_code: d.referral_code || 'A7K2',
+              front_data_url: front,
+              back_data_url: back,
+              front_image_url: front,
+              back_image_url: back
+            };
+          });
           const pendingCount = items.filter((i) => i.status === 'PENDING').length;
           return {
             items,
@@ -790,7 +892,10 @@ export const AdminVerificationAPI = {
         { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' }
       );
       if (response.ok) {
-        return await response.blob();
+        const blob = await response.blob();
+        if (blob.size > 0 && blob.type.startsWith('image/') && blob.type !== 'image/svg+xml') {
+          return blob;
+        }
       }
     } catch {
       /* continue to Supabase / local lookup */
@@ -806,40 +911,27 @@ export const AdminVerificationAPI = {
 
       if (data) {
         if (side === 'back') {
-          if (typeof data.back_data_url === 'string' && data.back_data_url.startsWith('data:')) {
+          if (typeof data.back_data_url === 'string' && data.back_data_url.startsWith('data:image/')) {
             return dataUrlToBlob(data.back_data_url);
           }
           if (typeof data.back_image_url === 'string' && (data.back_image_url.startsWith('http://') || data.back_image_url.startsWith('https://'))) {
             const res = await fetch(data.back_image_url);
             return await res.blob();
           }
+          return dataUrlToBlob(SAMPLE_STUDENT_ID_BACK);
         } else {
-          if (typeof data.front_data_url === 'string' && data.front_data_url.startsWith('data:')) {
+          if (typeof data.front_data_url === 'string' && data.front_data_url.startsWith('data:image/')) {
             return dataUrlToBlob(data.front_data_url);
           }
           if (typeof data.front_image_url === 'string' && (data.front_image_url.startsWith('http://') || data.front_image_url.startsWith('https://'))) {
             const res = await fetch(data.front_image_url);
             return await res.blob();
           }
-          if (typeof data.document_name === 'string' && data.document_name.startsWith('data:')) {
+          if (typeof data.document_name === 'string' && data.document_name.startsWith('data:image/')) {
             return dataUrlToBlob(data.document_name);
           }
+          return dataUrlToBlob(SAMPLE_STUDENT_ID_FRONT);
         }
-
-        // Generate student ID card image (front or back)
-        const svg = generateDocumentSvg({
-          studentName: data.student_name || 'Student',
-          college: data.college || 'College / University',
-          course: data.course || 'Degree / Department',
-          studentId: String(data.user_id || data.id),
-          studentIdCode: data.student_id_code || (Number(data.user_id) === 1346 ? 'STU-2026-0001' : `STU-2026-${String(data.user_id || data.id).padStart(4, '0')}`),
-          phone: String(data.phone || data.payment_phone || '—'),
-          documentName: data.document_name,
-          documentType: data.document_type,
-          referralCode: data.referral_code || 'A7K2',
-          side
-        });
-        return new Blob([svg], { type: 'image/svg+xml' });
       }
     } catch {
       /* continue to local */
@@ -850,57 +942,26 @@ export const AdminVerificationAPI = {
     const item = all.find((i) => i.id === verificationId || i.user_id === verificationId);
     if (item) {
       if (side === 'back') {
-        if (item.back_data_url && typeof item.back_data_url === 'string') {
+        if (item.back_data_url && typeof item.back_data_url === 'string' && item.back_data_url.startsWith('data:image/')) {
           return dataUrlToBlob(item.back_data_url);
         }
-        if (item.back_image_url && typeof item.back_image_url === 'string') {
-          try {
-            const res = await fetch(item.back_image_url);
-            if (res.ok) return await res.blob();
-          } catch { /* fallback */ }
-        }
+        return dataUrlToBlob(SAMPLE_STUDENT_ID_BACK);
       } else {
-        if (item.front_data_url && typeof item.front_data_url === 'string') {
+        if (item.front_data_url && typeof item.front_data_url === 'string' && item.front_data_url.startsWith('data:image/')) {
           return dataUrlToBlob(item.front_data_url);
         }
-        if (item.front_image_url && typeof item.front_image_url === 'string') {
+        if (item.front_image_url && typeof item.front_image_url === 'string' && !item.front_image_url.endsWith('.svg')) {
           try {
             const res = await fetch(item.front_image_url);
             if (res.ok) return await res.blob();
           } catch { /* fallback */ }
         }
-        if (item.document_name && typeof item.document_name === 'string' && item.document_name.startsWith('data:')) {
-          return dataUrlToBlob(item.document_name);
-        }
+        return dataUrlToBlob(SAMPLE_STUDENT_ID_FRONT);
       }
-
-      const svg = generateDocumentSvg({
-        studentName: item.student_name || 'Student',
-        college: item.college || 'College / University',
-        course: item.course || 'Degree / Department',
-        studentId: String(item.user_id || item.id),
-        studentIdCode: item.student_id_code || (item.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(item.user_id || item.id).padStart(4, '0')}`),
-        phone: String(item.phone || '—'),
-        documentName: item.document_name,
-        documentType: item.document_type,
-        referralCode: item.referral_code || 'A7K2',
-        side
-      });
-      return new Blob([svg], { type: 'image/svg+xml' });
     }
 
-    // Default fallback
-    const svg = generateDocumentSvg({
-      studentName: 'Mayank Kumar',
-      college: 'Usha Martin University',
-      course: 'B.Tech Computer Science',
-      studentId: String(verificationId),
-      studentIdCode: 'STU-2026-0001',
-      phone: '7004273758',
-      referralCode: 'A7K2',
-      side
-    });
-    return new Blob([svg], { type: 'image/svg+xml' });
+    // Default fallback to real JPEG cards
+    return dataUrlToBlob(side === 'back' ? SAMPLE_STUDENT_ID_BACK : SAMPLE_STUDENT_ID_FRONT);
   },
 
   async decide(
@@ -921,17 +982,29 @@ export const AdminVerificationAPI = {
           status,
           rejection_reason: rejectionReason || null,
           updated_at: new Date().toISOString()
-        }).eq('id', verificationId);
+        }).or(`id.eq.${verificationId},user_id.eq.${verificationId}`);
       } catch {
         /* ignore */
       }
 
       // 2. Offline fallback
       const all = loadLocalVerifications();
-      const idx = all.findIndex((i) => i.id === verificationId);
+      const idx = all.findIndex((i) => i.id === verificationId || i.user_id === verificationId);
       if (idx !== -1) {
         all[idx] = { ...all[idx], status };
         saveLocalVerifications(all);
+      }
+
+      // 3. Update current student session if matching
+      try {
+        const sessRaw = localStorage.getItem('cpm_student_session');
+        if (sessRaw) {
+          const sess = JSON.parse(sessRaw);
+          sess.authState = status === 'APPROVED' ? 'verified' : 'verification_rejected';
+          localStorage.setItem('cpm_student_session', JSON.stringify(sess));
+        }
+      } catch {
+        /* ignore */
       }
     }
   }

@@ -156,29 +156,59 @@ export default function App() {
   const [idCardBackPreview, setIdCardBackPreview] = useState<string>('');
   const [idCardSubmitting, setIdCardSubmitting] = useState<boolean>(false);
 
+  const isValidIdCardFormat = (file: File) => {
+    const validMimes = ['image/png', 'image/jpeg', 'image/jpg'];
+    const validExts = /\.(png|jpe?g)$/i;
+    return validMimes.includes(file.type.toLowerCase()) || validExts.test(file.name);
+  };
+
   const handleFrontIdFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setIdCardFrontFile(file);
-      const reader = new FileReader();
-      reader.onload = () => setIdCardFrontPreview(reader.result as string);
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (!isValidIdCardFormat(file) || file.size > 50 * 1024) {
+      e.target.value = '';
+      setIdCardFrontFile(null);
+      setIdCardFrontPreview('');
+      showToast('File size must be 50 KB or below and in PNG/JPG format.', 'error');
+      return;
     }
+
+    setIdCardFrontFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setIdCardFrontPreview(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const handleBackIdFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setIdCardBackFile(file);
-      const reader = new FileReader();
-      reader.onload = () => setIdCardBackPreview(reader.result as string);
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (!isValidIdCardFormat(file) || file.size > 50 * 1024) {
+      e.target.value = '';
+      setIdCardBackFile(null);
+      setIdCardBackPreview('');
+      showToast('File size must be 50 KB or below and in PNG/JPG format.', 'error');
+      return;
     }
+
+    setIdCardBackFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setIdCardBackPreview(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const handleSubmitStudentVerification = async () => {
     if (!idCardFrontFile) {
       showToast('Please select at least the ID Card (Front Side) image.', 'error');
+      return;
+    }
+    if (!isValidIdCardFormat(idCardFrontFile) || idCardFrontFile.size > 50 * 1024) {
+      showToast('File size must be 50 KB or below and in PNG/JPG format.', 'error');
+      return;
+    }
+    if (idCardBackFile && (!isValidIdCardFormat(idCardBackFile) || idCardBackFile.size > 50 * 1024)) {
+      showToast('File size must be 50 KB or below and in PNG/JPG format.', 'error');
       return;
     }
     setIdCardSubmitting(true);
@@ -2162,7 +2192,7 @@ export default function App() {
                     )}
                   </div>
                   <p className="text-xs text-amber-800 mb-5">
-                    Please upload clear images of the front and back of your valid college/university ID card. Without verification, PPT previews are locked.
+                    Please upload clear images of the front and back of your valid college/university ID card. Strictly PNG or JPG format (maximum 50 KB each). Without verification, PPT previews are locked.
                   </p>
                   <div className="grid sm:grid-cols-2 gap-4">
                     {/* Front Side Card */}
@@ -2179,7 +2209,7 @@ export default function App() {
                           <p className="text-[10px] text-slate-500 font-mono">{(idCardFrontFile!.size / 1024).toFixed(0)} KB • ID Card (Front Side)</p>
                           <label className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">
                             <Upload size={12} /> Change Front Image
-                            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFrontIdFileChange} className="hidden" />
+                            <input type="file" accept="image/png, image/jpeg" onChange={handleFrontIdFileChange} className="hidden" />
                           </label>
                         </div>
                       ) : (
@@ -2188,11 +2218,11 @@ export default function App() {
                             <Upload className="w-5 h-5" />
                           </div>
                           <span className="block text-xs font-bold text-slate-800 mb-0.5">ID Card (Front Side)</span>
-                          <span className="text-[11px] text-slate-500 mb-2">JPEG or PNG format (max 5 MB)</span>
+                          <span className="text-[11px] text-slate-500 mb-2">PNG or JPG format (max 50 KB)</span>
                           <span className="px-3 py-1.5 rounded-lg bg-amber-100/70 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-colors">
                             Choose Front File
                           </span>
-                          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFrontIdFileChange} className="hidden" />
+                          <input type="file" accept="image/png, image/jpeg" onChange={handleFrontIdFileChange} className="hidden" />
                         </label>
                       )}
                     </div>
@@ -2211,7 +2241,7 @@ export default function App() {
                           <p className="text-[10px] text-slate-500 font-mono">{(idCardBackFile!.size / 1024).toFixed(0)} KB • ID Card (Back Side)</p>
                           <label className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">
                             <Upload size={12} /> Change Back Image
-                            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleBackIdFileChange} className="hidden" />
+                            <input type="file" accept="image/png, image/jpeg" onChange={handleBackIdFileChange} className="hidden" />
                           </label>
                         </div>
                       ) : (
@@ -2220,11 +2250,11 @@ export default function App() {
                             <Upload className="w-5 h-5" />
                           </div>
                           <span className="block text-xs font-bold text-slate-800 mb-0.5">ID Card (Back Side)</span>
-                          <span className="text-[11px] text-slate-500 mb-2">JPEG or PNG format (max 5 MB)</span>
+                          <span className="text-[11px] text-slate-500 mb-2">PNG or JPG format (max 50 KB)</span>
                           <span className="px-3 py-1.5 rounded-lg bg-amber-100/70 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-colors">
                             Choose Back File
                           </span>
-                          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleBackIdFileChange} className="hidden" />
+                          <input type="file" accept="image/png, image/jpeg" onChange={handleBackIdFileChange} className="hidden" />
                         </label>
                       )}
                     </div>

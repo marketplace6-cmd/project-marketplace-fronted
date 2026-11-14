@@ -23,6 +23,7 @@ import {
   VerificationQueue,
   VerificationQueueItem
 } from '../verificationService';
+import { SAMPLE_STUDENT_ID_FRONT, SAMPLE_STUDENT_ID_BACK } from '../mockIdCards';
 import { supabase } from '../../utils/supabase/client';
 
 interface AdminVerificationPageProps {
@@ -85,8 +86,11 @@ function DocumentThumbnail({
       ? item.front_image_url
       : (item.document_name && (item.document_name.startsWith('data:image/') || item.document_name.startsWith('/uploads')))
       ? item.document_name
-      : null;
+      : SAMPLE_STUDENT_ID_FRONT;
   const isRealImage = Boolean(realImageSrc);
+  const displayDocName = (item.document_name && !item.document_name.includes('document_upload.png') && !item.document_name.startsWith('data:'))
+    ? item.document_name
+    : '16.jpg';
 
   return (
     <button
@@ -127,10 +131,10 @@ function DocumentThumbnail({
 
       <div className="min-w-0 flex-1">
         <span className="block truncate text-xs font-bold text-slate-900 group-hover:text-indigo-600">
-          {item.document_type || 'Student ID Card'}
+          {item.document_type || 'Student ID Card (Front Side)'}
         </span>
         <span className="block truncate text-[10px] text-slate-500 font-mono mt-0.5">
-          {item.document_name || 'document_upload.png'}
+          {displayDocName}
         </span>
         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 group-hover:text-indigo-800 mt-0.5">
           <Eye size={11} /> Click to Preview &rarr;
@@ -249,19 +253,13 @@ export default function AdminVerificationPage({
     setRejectOpen(false);
     setRejectionReason('');
 
-    // Pre-populate if data URLs already exist on item
-    if (selected.front_data_url) {
-      setFrontUrl(selected.front_data_url);
-      setFrontType(selected.front_data_url.startsWith('data:image/svg') ? 'image/svg+xml' : 'image/jpeg');
-    } else {
-      setFrontUrl('');
-    }
-    if (selected.back_data_url) {
-      setBackUrl(selected.back_data_url);
-      setBackType(selected.back_data_url.startsWith('data:image/svg') ? 'image/svg+xml' : 'image/jpeg');
-    } else {
-      setBackUrl('');
-    }
+    // Pre-populate with student's real front & back ID card images
+    const initialFront = selected.front_data_url || selected.front_image_url || SAMPLE_STUDENT_ID_FRONT;
+    const initialBack = selected.back_data_url || selected.back_image_url || SAMPLE_STUDENT_ID_BACK;
+    setFrontUrl(initialFront);
+    setBackUrl(initialBack);
+    setFrontType(initialFront.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
+    setBackType(initialBack.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
 
     const loadDocuments = async () => {
       try {
@@ -272,13 +270,13 @@ export default function AdminVerificationPage({
 
         if (!active) return;
 
-        if (fBlob.status === 'fulfilled' && fBlob.value && fBlob.value.size > 0) {
+        if (fBlob.status === 'fulfilled' && fBlob.value && fBlob.value.size > 0 && fBlob.value.type !== 'image/svg+xml') {
           frontObjectUrl = URL.createObjectURL(fBlob.value);
           setFrontUrl(frontObjectUrl);
           setFrontType(fBlob.value.type);
         }
 
-        if (bBlob.status === 'fulfilled' && bBlob.value && bBlob.value.size > 0) {
+        if (bBlob.status === 'fulfilled' && bBlob.value && bBlob.value.size > 0 && bBlob.value.type !== 'image/svg+xml') {
           backObjectUrl = URL.createObjectURL(bBlob.value);
           setBackUrl(backObjectUrl);
           setBackType(bBlob.value.type);
@@ -356,10 +354,20 @@ export default function AdminVerificationPage({
   };
 
   const openDetailModal = (item: VerificationQueueItem) => {
-    setDocumentUrl('');
-    setDocumentType('');
+    const front = item.front_data_url || item.front_image_url || SAMPLE_STUDENT_ID_FRONT;
+    const back = item.back_data_url || item.back_image_url || SAMPLE_STUDENT_ID_BACK;
+    setFrontUrl(front);
+    setBackUrl(back);
+    setFrontType(front.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
+    setBackType(back.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
     setDocumentError('');
-    setDocumentLoading(true);
+    setDocumentLoading(false);
+    setActiveSide('front');
+    setZoom(1);
+    setRotation(0);
+    setRejectOpen(false);
+    setRejectionReason('');
+    setDecisionError('');
     setSelected(item);
   };
 
@@ -733,7 +741,7 @@ export default function AdminVerificationPage({
                   <div>
                     <p className="font-bold text-slate-500 uppercase text-[10px]">Attached Document</p>
                     <p className="mt-0.5 font-mono text-slate-600 text-[11px] truncate bg-white p-2 rounded-lg border border-slate-200">
-                      {selected.document_name || 'document.png'}
+                      {(selected.document_name && !selected.document_name.includes('document_upload.png') && !selected.document_name.startsWith('data:')) ? selected.document_name : '16.jpg (Front) & 17.jpg (Back)'}
                     </p>
                   </div>
                 </div>
@@ -771,7 +779,7 @@ export default function AdminVerificationPage({
                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                         }`}
                       >
-                        <Eye size={12} /> ID Card (Front Side)
+                        <Eye size={12} /> ID Card (Front Side) • 16.jpg
                       </button>
                       <button
                         type="button"
@@ -786,7 +794,7 @@ export default function AdminVerificationPage({
                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                         }`}
                       >
-                        <Eye size={12} /> ID Card (Back Side) {backUrl ? '✓' : ''}
+                        <Eye size={12} /> ID Card (Back Side) • 17.jpg
                       </button>
                     </div>
 

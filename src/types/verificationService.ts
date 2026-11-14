@@ -454,27 +454,31 @@ export const StudentVerificationAPI = {
     saveLocalStudentVerification(studentStatus);
 
     try {
-      await supabase.from('verifications').upsert([
-        {
-          user_id: userId,
-          student_name: details.student_name,
-          email: details.email,
-          phone: details.phone,
-          college: details.college,
-          course: details.course,
-          student_id_code: details.student_id_code,
-          referral_code: details.referral_code,
-          status: 'PENDING',
-          payment_phone: details.phone,
-          document_name: details.front_filename,
-          document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
-          front_data_url: details.front_data_url,
-          back_data_url: details.back_data_url || null,
-          front_image_url: details.front_data_url,
-          back_image_url: details.back_data_url || null,
-          submitted_at: now
-        }
-      ], { onConflict: 'email' });
+      const record = {
+        user_id: userId,
+        student_name: details.student_name,
+        email: details.email,
+        phone: details.phone,
+        college: details.college,
+        course: details.course,
+        student_id_code: details.student_id_code,
+        referral_code: details.referral_code,
+        status: 'PENDING',
+        payment_phone: details.phone,
+        document_name: details.front_filename,
+        document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
+        front_image_url: details.front_data_url,
+        back_image_url: details.back_data_url || null,
+        front_data_url: details.front_data_url,
+        back_data_url: details.back_data_url || null,
+        submitted_at: now
+      };
+
+      const { error } = await supabase.from('verifications').upsert([record], { onConflict: 'email' });
+      if (error) {
+        // Fallback: insert directly or update
+        await supabase.from('verifications').insert([record]);
+      }
     } catch {
       /* ignore Supabase error */
     }
@@ -911,24 +915,25 @@ export const AdminVerificationAPI = {
 
       if (data) {
         if (side === 'back') {
-          if (typeof data.back_data_url === 'string' && data.back_data_url.startsWith('data:image/')) {
-            return dataUrlToBlob(data.back_data_url);
+          const backVal = data.back_image_url || data.back_data_url;
+          if (typeof backVal === 'string' && backVal.startsWith('data:image/')) {
+            return dataUrlToBlob(backVal);
           }
-          if (typeof data.back_image_url === 'string' && (data.back_image_url.startsWith('http://') || data.back_image_url.startsWith('https://'))) {
-            const res = await fetch(data.back_image_url);
-            return await res.blob();
+          if (typeof backVal === 'string' && (backVal.startsWith('http://') || backVal.startsWith('https://') || backVal.startsWith('/uploads/'))) {
+            const fetchUrl = backVal.startsWith('/uploads/') ? `${verificationApiBaseUrl.replace(/\/api\/v1$/, '')}${backVal}` : backVal;
+            const res = await fetch(fetchUrl);
+            if (res.ok) return await res.blob();
           }
           return dataUrlToBlob(SAMPLE_STUDENT_ID_BACK);
         } else {
-          if (typeof data.front_data_url === 'string' && data.front_data_url.startsWith('data:image/')) {
-            return dataUrlToBlob(data.front_data_url);
+          const frontVal = data.front_image_url || data.front_data_url || (data.document_name && data.document_name.startsWith('data:image/') ? data.document_name : null);
+          if (typeof frontVal === 'string' && frontVal.startsWith('data:image/')) {
+            return dataUrlToBlob(frontVal);
           }
-          if (typeof data.front_image_url === 'string' && (data.front_image_url.startsWith('http://') || data.front_image_url.startsWith('https://'))) {
-            const res = await fetch(data.front_image_url);
-            return await res.blob();
-          }
-          if (typeof data.document_name === 'string' && data.document_name.startsWith('data:image/')) {
-            return dataUrlToBlob(data.document_name);
+          if (typeof frontVal === 'string' && (frontVal.startsWith('http://') || frontVal.startsWith('https://') || frontVal.startsWith('/uploads/'))) {
+            const fetchUrl = frontVal.startsWith('/uploads/') ? `${verificationApiBaseUrl.replace(/\/api\/v1$/, '')}${frontVal}` : frontVal;
+            const res = await fetch(fetchUrl);
+            if (res.ok) return await res.blob();
           }
           return dataUrlToBlob(SAMPLE_STUDENT_ID_FRONT);
         }

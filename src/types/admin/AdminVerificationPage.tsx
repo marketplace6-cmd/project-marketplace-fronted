@@ -263,6 +263,30 @@ export default function AdminVerificationPage({
 
     const loadDocuments = async () => {
       try {
+        // 1. Direct query to Supabase verifications row for front_image_url & back_image_url
+        try {
+          const { data: sbRecord } = await supabase
+            .from('verifications')
+            .select('*')
+            .or(`id.eq.${selected.id},user_id.eq.${selected.user_id}`)
+            .maybeSingle();
+
+          if (active && sbRecord) {
+            const f = sbRecord.front_image_url || sbRecord.front_data_url;
+            const b = sbRecord.back_image_url || sbRecord.back_data_url;
+            if (f && typeof f === 'string' && f.startsWith('data:image/')) {
+              setFrontUrl(f);
+              setFrontType(f.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
+            }
+            if (b && typeof b === 'string' && b.startsWith('data:image/')) {
+              setBackUrl(b);
+              setBackType(b.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
+            }
+          }
+        } catch {
+          /* continue to API fetch */
+        }
+
         const [fBlob, bBlob] = await Promise.allSettled([
           AdminVerificationAPI.getDocument(accessToken, selected.id, 'front'),
           AdminVerificationAPI.getDocument(accessToken, selected.id, 'back')
@@ -354,8 +378,8 @@ export default function AdminVerificationPage({
   };
 
   const openDetailModal = (item: VerificationQueueItem) => {
-    const front = item.front_data_url || item.front_image_url || SAMPLE_STUDENT_ID_FRONT;
-    const back = item.back_data_url || item.back_image_url || SAMPLE_STUDENT_ID_BACK;
+    const front = item.front_image_url || item.front_data_url || SAMPLE_STUDENT_ID_FRONT;
+    const back = item.back_image_url || item.back_data_url || SAMPLE_STUDENT_ID_BACK;
     setFrontUrl(front);
     setBackUrl(back);
     setFrontType(front.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
@@ -369,6 +393,32 @@ export default function AdminVerificationPage({
     setRejectionReason('');
     setDecisionError('');
     setSelected(item);
+
+    // Live query to Supabase for front_image_url and back_image_url
+    void (async () => {
+      try {
+        const { data: sbData } = await supabase
+          .from('verifications')
+          .select('front_image_url, back_image_url, front_data_url, back_data_url')
+          .or(`id.eq.${item.id},user_id.eq.${item.user_id}`)
+          .maybeSingle();
+
+        if (sbData) {
+          const liveFront = sbData.front_image_url || sbData.front_data_url;
+          const liveBack = sbData.back_image_url || sbData.back_data_url;
+          if (liveFront && typeof liveFront === 'string' && liveFront.startsWith('data:image/')) {
+            setFrontUrl(liveFront);
+            setFrontType(liveFront.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
+          }
+          if (liveBack && typeof liveBack === 'string' && liveBack.startsWith('data:image/')) {
+            setBackUrl(liveBack);
+            setBackType(liveBack.startsWith('data:image/png') ? 'image/png' : 'image/jpeg');
+          }
+        }
+      } catch {
+        /* fallback to pre-populated item URLs */
+      }
+    })();
   };
 
   const startSearch = (value: string) => {

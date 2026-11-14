@@ -3240,7 +3240,6 @@ export default function App() {
               <li><button onClick={() => navigate('verification')} className="hover:text-white">Student ID Verification</button></li>
               <li><button onClick={() => navigate('selected-projects')} className="hover:text-white">Selected Projects (Max 3)</button></li>
               <li><button onClick={() => navigate('referrals')} className="hover:text-white">Referral Program</button></li>
-              <li><button onClick={() => navigate('admin-login')} className="hover:text-white flex items-center gap-1"><ShieldCheck size={13} className="text-indigo-400" /> Admin & Mentor Portal</button></li>
             </ul>
           </div>
           <div className="space-y-2">

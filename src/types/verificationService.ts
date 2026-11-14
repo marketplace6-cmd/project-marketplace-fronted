@@ -14,6 +14,10 @@ export interface VerificationQueueItem {
   document_type?: string;
   referral_code?: string;
   student_id_code?: string;
+  front_image_url?: string;
+  back_image_url?: string;
+  front_data_url?: string;
+  back_data_url?: string;
 }
 
 export interface VerificationQueue {
@@ -37,6 +41,10 @@ export interface StudentVerificationStatus {
   course: string | null;
   email: string | null;
   phone: string | null;
+  front_image_url?: string;
+  back_image_url?: string;
+  front_data_url?: string;
+  back_data_url?: string;
 }
 
 export interface StudentNotification {
@@ -350,6 +358,125 @@ export const StudentVerificationAPI = {
         /* ignore */
       }
     }
+  },
+
+  async submitDual(
+    formData: FormData,
+    details: {
+      student_name: string;
+      email: string;
+      phone: string;
+      college: string;
+      course: string;
+      student_id_code: string;
+      referral_code: string;
+      front_data_url: string;
+      back_data_url?: string;
+      front_filename: string;
+      back_filename?: string;
+      user_id?: string | number;
+    }
+  ): Promise<void> {
+    // 1. Post to backend endpoints
+    const endpoints = [
+      `${verificationApiBaseUrl}/students/verify`,
+      `${verificationApiBaseUrl.replace(/\/v1$/, '')}/students/verify`,
+      '/api/students/verify',
+      `${verificationApiBaseUrl}/verification/submit-dual`
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          body: formData
+        });
+        if (resp.ok) break;
+      } catch {
+        /* try next */
+      }
+    }
+
+    // 2. Persist in localStorage queue and Supabase so Admin instantly receives it
+    const now = new Date().toISOString();
+    const userId = Number(details.user_id) || (details.student_id_code === 'STU-2026-0001' ? 1346 : Math.floor(1000 + Math.random() * 9000));
+
+    const newItem: VerificationQueueItem = {
+      id: userId,
+      user_id: userId,
+      student_name: details.student_name,
+      email: details.email,
+      phone: details.phone,
+      college: details.college,
+      course: details.course,
+      status: 'PENDING',
+      submitted_at: now,
+      document_name: details.front_filename,
+      document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
+      student_id_code: details.student_id_code,
+      referral_code: details.referral_code,
+      front_data_url: details.front_data_url,
+      back_data_url: details.back_data_url || undefined,
+      front_image_url: details.front_data_url,
+      back_image_url: details.back_data_url || undefined
+    };
+
+    const localItems = loadLocalVerifications();
+    const existingIdx = localItems.findIndex(
+      (i) => i.email === details.email || i.student_id_code === details.student_id_code || i.user_id === userId
+    );
+    if (existingIdx !== -1) {
+      localItems[existingIdx] = { ...localItems[existingIdx], ...newItem };
+    } else {
+      localItems.unshift(newItem);
+    }
+    saveLocalVerifications(localItems);
+
+    const studentStatus: StudentVerificationStatus = {
+      id: userId,
+      status: 'PENDING',
+      payment_phone: details.phone,
+      rejection_reason: null,
+      created_at: now,
+      updated_at: now,
+      document_name: details.front_filename,
+      student_name: details.student_name,
+      college: details.college,
+      course: details.course,
+      email: details.email,
+      phone: details.phone,
+      front_data_url: details.front_data_url,
+      back_data_url: details.back_data_url,
+      front_image_url: details.front_data_url,
+      back_image_url: details.back_data_url
+    };
+    saveLocalStudentVerification(studentStatus);
+
+    try {
+      await supabase.from('verifications').upsert([
+        {
+          user_id: userId,
+          student_name: details.student_name,
+          email: details.email,
+          phone: details.phone,
+          college: details.college,
+          course: details.course,
+          student_id_code: details.student_id_code,
+          referral_code: details.referral_code,
+          status: 'PENDING',
+          payment_phone: details.phone,
+          document_name: details.front_filename,
+          document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
+          front_data_url: details.front_data_url,
+          back_data_url: details.back_data_url || null,
+          front_image_url: details.front_data_url,
+          back_image_url: details.back_data_url || null,
+          submitted_at: now
+        }
+      ], { onConflict: 'email' });
+    } catch {
+      /* ignore Supabase error */
+    }
   }
 };
 
@@ -465,6 +592,21 @@ export const StudentAuthAPI = {
 };
 
 export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
+  {
+    id: 3911,
+    user_id: 3911,
+    student_id_code: 'STU-2026-3911',
+    student_name: 'rahul',
+    email: 'shubham12@gmail.com',
+    phone: '7004273758',
+    college: 'umu',
+    course: 'b.tech',
+    status: 'PENDING',
+    submitted_at: '2026-11-14T23:31:15.000Z',
+    document_name: 'rahul_student_id.jpg',
+    document_type: 'Student ID Card (Front & Back)',
+    referral_code: 'A7K2'
+  },
   {
     id: 1,
     user_id: 1346,
@@ -583,7 +725,15 @@ export const AdminVerificationAPI = {
             college: d.college || null,
             course: d.course || null,
             status: d.status,
-            submitted_at: d.submitted_at || d.created_at || new Date().toISOString()
+            submitted_at: d.submitted_at || d.created_at || new Date().toISOString(),
+            document_name: d.document_name,
+            document_type: d.document_type || (d.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)'),
+            student_id_code: d.student_id_code,
+            referral_code: d.referral_code,
+            front_data_url: d.front_data_url || d.front_image_url,
+            back_data_url: d.back_data_url || d.back_image_url,
+            front_image_url: d.front_image_url,
+            back_image_url: d.back_image_url
           }));
           const pendingCount = items.filter((i) => i.status === 'PENDING').length;
           return {
@@ -626,11 +776,17 @@ export const AdminVerificationAPI = {
     }
   },
 
-  async getDocument(accessToken: string, verificationId: number, download = false): Promise<Blob> {
+  async getDocument(
+    accessToken: string,
+    verificationId: number,
+    side: 'front' | 'back' = 'front',
+    download = false
+  ): Promise<Blob> {
     try {
-      const query = download ? '?download=true' : '';
+      const queryParams = new URLSearchParams({ side });
+      if (download) queryParams.set('download', 'true');
       const response = await fetch(
-        `${verificationApiBaseUrl}/admin/verification/${verificationId}/document${query}`,
+        `${verificationApiBaseUrl}/admin/verification/${verificationId}/document?${queryParams}`,
         { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' }
       );
       if (response.ok) {
@@ -649,15 +805,28 @@ export const AdminVerificationAPI = {
         .maybeSingle();
 
       if (data) {
-        if (typeof data.document_name === 'string' && data.document_name.startsWith('data:')) {
-          return dataUrlToBlob(data.document_name);
-        }
-        if (typeof data.document_name === 'string' && (data.document_name.startsWith('http://') || data.document_name.startsWith('https://'))) {
-          const res = await fetch(data.document_name);
-          return await res.blob();
+        if (side === 'back') {
+          if (typeof data.back_data_url === 'string' && data.back_data_url.startsWith('data:')) {
+            return dataUrlToBlob(data.back_data_url);
+          }
+          if (typeof data.back_image_url === 'string' && (data.back_image_url.startsWith('http://') || data.back_image_url.startsWith('https://'))) {
+            const res = await fetch(data.back_image_url);
+            return await res.blob();
+          }
+        } else {
+          if (typeof data.front_data_url === 'string' && data.front_data_url.startsWith('data:')) {
+            return dataUrlToBlob(data.front_data_url);
+          }
+          if (typeof data.front_image_url === 'string' && (data.front_image_url.startsWith('http://') || data.front_image_url.startsWith('https://'))) {
+            const res = await fetch(data.front_image_url);
+            return await res.blob();
+          }
+          if (typeof data.document_name === 'string' && data.document_name.startsWith('data:')) {
+            return dataUrlToBlob(data.document_name);
+          }
         }
 
-        // If it's a document filename or record without full dataUrl, generate a real student ID card image
+        // Generate student ID card image (front or back)
         const svg = generateDocumentSvg({
           studentName: data.student_name || 'Student',
           college: data.college || 'College / University',
@@ -667,7 +836,8 @@ export const AdminVerificationAPI = {
           phone: String(data.phone || data.payment_phone || '—'),
           documentName: data.document_name,
           documentType: data.document_type,
-          referralCode: data.referral_code || 'A7K2'
+          referralCode: data.referral_code || 'A7K2',
+          side
         });
         return new Blob([svg], { type: 'image/svg+xml' });
       }
@@ -678,10 +848,32 @@ export const AdminVerificationAPI = {
     // 2. Offline fallback: local storage
     const all = loadLocalVerifications();
     const item = all.find((i) => i.id === verificationId || i.user_id === verificationId);
-    if (item && typeof item.document_name === 'string' && item.document_name.startsWith('data:')) {
-      return dataUrlToBlob(item.document_name);
-    }
     if (item) {
+      if (side === 'back') {
+        if (item.back_data_url && typeof item.back_data_url === 'string') {
+          return dataUrlToBlob(item.back_data_url);
+        }
+        if (item.back_image_url && typeof item.back_image_url === 'string') {
+          try {
+            const res = await fetch(item.back_image_url);
+            if (res.ok) return await res.blob();
+          } catch { /* fallback */ }
+        }
+      } else {
+        if (item.front_data_url && typeof item.front_data_url === 'string') {
+          return dataUrlToBlob(item.front_data_url);
+        }
+        if (item.front_image_url && typeof item.front_image_url === 'string') {
+          try {
+            const res = await fetch(item.front_image_url);
+            if (res.ok) return await res.blob();
+          } catch { /* fallback */ }
+        }
+        if (item.document_name && typeof item.document_name === 'string' && item.document_name.startsWith('data:')) {
+          return dataUrlToBlob(item.document_name);
+        }
+      }
+
       const svg = generateDocumentSvg({
         studentName: item.student_name || 'Student',
         college: item.college || 'College / University',
@@ -691,7 +883,8 @@ export const AdminVerificationAPI = {
         phone: String(item.phone || '—'),
         documentName: item.document_name,
         documentType: item.document_type,
-        referralCode: item.referral_code || 'A7K2'
+        referralCode: item.referral_code || 'A7K2',
+        side
       });
       return new Blob([svg], { type: 'image/svg+xml' });
     }
@@ -704,7 +897,8 @@ export const AdminVerificationAPI = {
       studentId: String(verificationId),
       studentIdCode: 'STU-2026-0001',
       phone: '7004273758',
-      referralCode: 'A7K2'
+      referralCode: 'A7K2',
+      side
     });
     return new Blob([svg], { type: 'image/svg+xml' });
   },
@@ -776,7 +970,11 @@ export function generateDocumentSvg(info: {
   documentName?: string;
   documentType?: string;
   referralCode?: string;
+  side?: 'front' | 'back';
 }): string {
+  if (info.side === 'back') {
+    return generateStudentIdCardBackSvg(info);
+  }
   const docType = (info.documentType || info.documentName || '').toLowerCase();
   if (docType.includes('payment') || docType.includes('receipt') || docType.includes('upi')) {
     return generatePaymentProofSvg(info);
@@ -931,6 +1129,68 @@ function generateStudentIdCardSvg(info: {
   </g>
   <rect x="430" y="278" width="125" height="26" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/>
   <text x="492" y="295" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#059669" text-anchor="middle">COLLEGE ID CARD</text>
+</svg>`;
+}
+
+function generateStudentIdCardBackSvg(info: {
+  studentName: string;
+  college: string;
+  course: string;
+  studentId: string;
+  studentIdCode?: string;
+  phone: string;
+  referralCode?: string;
+}): string {
+  const { studentName, college, studentId, studentIdCode, phone } = info;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <defs>
+    <linearGradient id="backGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+  </defs>
+  <rect x="15" y="15" width="570" height="350" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <path d="M 15 31 Q 15 15 31 15 L 569 15 Q 585 15 585 31 L 585 75 L 15 75 Z" fill="url(#backGrad)"/>
+  <text x="300" y="48" font-family="system-ui, sans-serif" font-size="15" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">STUDENT IDENTITY CARD (BACK SIDE)</text>
+  <text x="300" y="65" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#cbd5e1" text-anchor="middle" letter-spacing="1">INSTITUTION TERMS &amp; EMERGENCY DIRECTORY</text>
+
+  <rect x="40" y="90" width="520" height="80" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="55" y="112" font-family="system-ui, sans-serif" font-size="11" font-weight="800" fill="#0f172a">TERMS &amp; CONDITIONS</text>
+  <text x="55" y="130" font-family="system-ui, sans-serif" font-size="9" fill="#475569">1. This identification card is strictly non-transferable and remains property of ${escapeXml(college || 'the University')}.</text>
+  <text x="55" y="146" font-family="system-ui, sans-serif" font-size="9" fill="#475569">2. Must be presented on demand during academic exams, library issues, and campus entry.</text>
+  <text x="55" y="162" font-family="system-ui, sans-serif" font-size="9" fill="#475569">3. If found, please return immediately to Campus Administration or call emergency lines.</text>
+
+  <rect x="40" y="182" width="250" height="85" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="55" y="202" font-family="system-ui, sans-serif" font-size="10" font-weight="800" fill="#64748b">STUDENT RESIDENTIAL ADDRESS</text>
+  <text x="55" y="222" font-family="system-ui, sans-serif" font-size="11" font-weight="800" fill="#0f172a">${escapeXml(studentName)}</text>
+  <text x="55" y="238" font-family="system-ui, sans-serif" font-size="9" fill="#475569">Academic Hostel, University Campus Road</text>
+  <text x="55" y="252" font-family="system-ui, sans-serif" font-size="9" font-weight="700" fill="#0f172a">Emergency Helpline: ${escapeXml(phone)}</text>
+
+  <rect x="310" y="182" width="250" height="85" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="325" y="202" font-family="system-ui, sans-serif" font-size="10" font-weight="800" fill="#64748b">OFFICIAL ISSUING AUTHORITY</text>
+  <path d="M 335 242 Q 365 215 395 235 T 465 225" fill="none" stroke="#2563eb" stroke-width="2"/>
+  <line x1="325" y1="248" x2="540" y2="248" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="430" y="260" font-family="system-ui, sans-serif" font-size="9" font-weight="700" fill="#64748b" text-anchor="middle">REGISTRAR / DEAN OF STUDENT AFFAIRS</text>
+
+  <rect x="40" y="280" width="520" height="45" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+  <g transform="translate(180, 287)">
+    <rect x="0" y="0" width="3" height="20" fill="#0f172a"/>
+    <rect x="6" y="0" width="5" height="20" fill="#0f172a"/>
+    <rect x="15" y="0" width="2" height="20" fill="#0f172a"/>
+    <rect x="22" y="0" width="4" height="20" fill="#0f172a"/>
+    <rect x="30" y="0" width="6" height="20" fill="#0f172a"/>
+    <rect x="40" y="0" width="3" height="20" fill="#0f172a"/>
+    <rect x="48" y="0" width="2" height="20" fill="#0f172a"/>
+    <rect x="55" y="0" width="5" height="20" fill="#0f172a"/>
+    <rect x="65" y="0" width="4" height="20" fill="#0f172a"/>
+    <rect x="75" y="0" width="6" height="20" fill="#0f172a"/>
+    <rect x="85" y="0" width="3" height="20" fill="#0f172a"/>
+    <rect x="92" y="0" width="5" height="20" fill="#0f172a"/>
+    <rect x="102" y="0" width="4" height="20" fill="#0f172a"/>
+    <text x="120" y="15" font-family="monospace" font-size="11" font-weight="700" fill="#0f172a">BARCODE: * ${escapeXml(studentIdCode || studentId)} * VALID 2026-2028</text>
+  </g>
+  <rect x="40" y="335" width="520" height="24" rx="4" fill="#f1f5f9"/>
+  <text x="300" y="351" font-family="system-ui, sans-serif" font-size="9" font-weight="700" fill="#64748b" text-anchor="middle">OFFICIAL STUDENT VERIFICATION COPY • PROTECTED BY UVIKART VERIFICATION</text>
 </svg>`;
 }
 

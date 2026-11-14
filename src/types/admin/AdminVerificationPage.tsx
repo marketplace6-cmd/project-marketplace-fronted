@@ -77,7 +77,16 @@ function DocumentThumbnail({
   const docType = (item.document_type || item.document_name || '').toLowerCase();
   const isPayment = docType.includes('payment') || docType.includes('receipt') || docType.includes('upi');
   const isProject = docType.includes('project') || docType.includes('preview') || docType.includes('architecture');
-  const isRealImage = item.document_name && item.document_name.startsWith('data:image/');
+  
+  const realImageSrc =
+    (item.front_data_url && item.front_data_url.startsWith('data:image/'))
+      ? item.front_data_url
+      : (item.front_image_url && !item.front_image_url.endsWith('.svg'))
+      ? item.front_image_url
+      : (item.document_name && (item.document_name.startsWith('data:image/') || item.document_name.startsWith('/uploads')))
+      ? item.document_name
+      : null;
+  const isRealImage = Boolean(realImageSrc);
 
   return (
     <button
@@ -89,7 +98,7 @@ function DocumentThumbnail({
       <div className="relative w-16 h-12 rounded-lg overflow-hidden bg-slate-900 border border-slate-200 shrink-0 flex items-center justify-center shadow-xs">
         {isRealImage ? (
           <img
-            src={item.document_name}
+            src={realImageSrc!}
             alt={item.student_name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform"
           />
@@ -143,8 +152,11 @@ export default function AdminVerificationPage({
   const [filter, setFilter] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<VerificationQueueItem | null>(null);
-  const [documentUrl, setDocumentUrl] = useState('');
-  const [documentType, setDocumentType] = useState('');
+  const [activeSide, setActiveSide] = useState<'front' | 'back'>('front');
+  const [frontUrl, setFrontUrl] = useState('');
+  const [backUrl, setBackUrl] = useState('');
+  const [frontType, setFrontType] = useState('image/jpeg');
+  const [backType, setBackType] = useState('image/jpeg');
   const [documentLoading, setDocumentLoading] = useState(false);
   const [documentError, setDocumentError] = useState('');
   const [zoom, setZoom] = useState(1);
@@ -222,45 +234,73 @@ export default function AdminVerificationPage({
     };
   }, [refresh, onChanged]);
 
-  // Load document when an item is selected
+  // Load front and back documents when an item is selected
   useEffect(() => {
     if (!selected) return;
 
     let active = true;
-    let objectUrl = '';
+    let frontObjectUrl = '';
+    let backObjectUrl = '';
     setDocumentLoading(true);
     setDocumentError('');
+    setActiveSide('front');
     setZoom(1);
     setRotation(0);
     setRejectOpen(false);
     setRejectionReason('');
 
-    void AdminVerificationAPI.getDocument(accessToken, selected.id)
-      .then((blob) => {
+    // Pre-populate if data URLs already exist on item
+    if (selected.front_data_url) {
+      setFrontUrl(selected.front_data_url);
+      setFrontType(selected.front_data_url.startsWith('data:image/svg') ? 'image/svg+xml' : 'image/jpeg');
+    } else {
+      setFrontUrl('');
+    }
+    if (selected.back_data_url) {
+      setBackUrl(selected.back_data_url);
+      setBackType(selected.back_data_url.startsWith('data:image/svg') ? 'image/svg+xml' : 'image/jpeg');
+    } else {
+      setBackUrl('');
+    }
+
+    const loadDocuments = async () => {
+      try {
+        const [fBlob, bBlob] = await Promise.allSettled([
+          AdminVerificationAPI.getDocument(accessToken, selected.id, 'front'),
+          AdminVerificationAPI.getDocument(accessToken, selected.id, 'back')
+        ]);
+
         if (!active) return;
-        if (!['image/jpeg', 'image/png', 'application/pdf', 'image/svg+xml'].includes(blob.type)) {
-          setDocumentError('This document format cannot be previewed safely.');
-          return;
+
+        if (fBlob.status === 'fulfilled' && fBlob.value && fBlob.value.size > 0) {
+          frontObjectUrl = URL.createObjectURL(fBlob.value);
+          setFrontUrl(frontObjectUrl);
+          setFrontType(fBlob.value.type);
         }
-        objectUrl = URL.createObjectURL(blob);
-        setDocumentType(blob.type);
-        setDocumentUrl(objectUrl);
-      })
-      .catch((requestError: unknown) => {
+
+        if (bBlob.status === 'fulfilled' && bBlob.value && bBlob.value.size > 0) {
+          backObjectUrl = URL.createObjectURL(bBlob.value);
+          setBackUrl(backObjectUrl);
+          setBackType(bBlob.value.type);
+        }
+      } catch (requestError: unknown) {
         if (!active) return;
         if (requestError instanceof VerificationApiError && (requestError.status === 401 || requestError.status === 403)) {
           onSessionExpired();
         } else {
-          setDocumentError(requestError instanceof Error ? requestError.message : 'Unable to load this document.');
+          setDocumentError(requestError instanceof Error ? requestError.message : 'Unable to load student document.');
         }
-      })
-      .finally(() => {
+      } finally {
         if (active) setDocumentLoading(false);
-      });
+      }
+    };
+
+    void loadDocuments();
 
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (frontObjectUrl) URL.revokeObjectURL(frontObjectUrl);
+      if (backObjectUrl) URL.revokeObjectURL(backObjectUrl);
     };
   }, [accessToken, onSessionExpired, selected]);
 
@@ -620,8 +660,8 @@ export default function AdminVerificationPage({
                 type="button"
                 onClick={() => {
                   setSelected(null);
-                  setDocumentUrl('');
-                  setDocumentType('');
+                  setFrontUrl('');
+                  setBackUrl('');
                   setDocumentError('');
                   setDocumentLoading(false);
                   setZoom(1);
@@ -715,10 +755,41 @@ export default function AdminVerificationPage({
               <div className="flex flex-col bg-slate-100 p-4 sm:p-6 justify-between overflow-hidden">
                 {/* Lightbox Controls Top Bar */}
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-800">
-                      {selected.document_type || 'Uploaded Student ID Document'}
-                    </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Front / Back Side Switcher */}
+                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveSide('front');
+                          setZoom(1);
+                          setRotation(0);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          activeSide === 'front'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                        }`}
+                      >
+                        <Eye size={12} /> ID Card (Front Side)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveSide('back');
+                          setZoom(1);
+                          setRotation(0);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          activeSide === 'back'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                        }`}
+                      >
+                        <Eye size={12} /> ID Card (Back Side) {backUrl ? '✓' : ''}
+                      </button>
+                    </div>
+
                     <span className="text-[11px] font-mono text-slate-400">
                       ({Math.round(zoom * 100)}% zoom)
                     </span>
@@ -760,41 +831,51 @@ export default function AdminVerificationPage({
                     >
                       100%
                     </button>
-                    {documentUrl && (
+                    {(activeSide === 'front' ? frontUrl : backUrl) && (
                       <a
-                        href={documentUrl}
-                        download={`student-doc-${selected.user_id}`}
+                        href={activeSide === 'front' ? frontUrl : backUrl}
+                        download={`student-id-${selected.user_id}-${activeSide}`}
                         className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors ml-1"
                       >
-                        <Download size={14} /> Download
+                        <Download size={14} /> Download {activeSide === 'front' ? 'Front' : 'Back'}
                       </a>
                     )}
                   </div>
                 </div>
 
                 {/* Lightbox Preview Viewport Canvas */}
-                <div className="flex min-h-[340px] flex-1 items-center justify-center overflow-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-inner relative">
+                <div className="flex min-h-[360px] flex-1 items-center justify-center overflow-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-inner relative">
                   {documentLoading ? (
                     <div className="flex flex-col items-center gap-2 text-slate-500">
                       <LoaderCircle className="animate-spin text-indigo-600" size={32} />
-                      <p className="text-xs font-semibold">Loading high-resolution document preview...</p>
+                      <p className="text-xs font-semibold">Loading high-resolution {activeSide} ID document preview...</p>
                     </div>
-                  ) : documentError ? (
+                  ) : documentError && !(activeSide === 'front' ? frontUrl : backUrl) ? (
                     <div role="alert" className="max-w-md p-6 text-center space-y-2">
                       <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
                       <p className="text-sm font-bold text-slate-900">Document Preview Notice</p>
                       <p className="text-xs text-rose-700">{documentError}</p>
                     </div>
-                  ) : documentType === 'application/pdf' && documentUrl ? (
-                    <iframe title="Student ID PDF" src={documentUrl} className="h-[55vh] w-full rounded-xl" />
-                  ) : (documentType.startsWith('image/') || documentType.includes('svg')) && documentUrl ? (
-                    <div className="flex items-center justify-center w-full h-full p-2">
-                      <img
-                        src={documentUrl}
-                        alt="Uploaded student document preview"
-                        className="max-h-[55vh] max-w-full object-contain rounded-xl shadow-xs transition-transform duration-150"
-                        style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
-                      />
+                  ) : (activeSide === 'front' ? frontUrl : backUrl) ? (
+                    (activeSide === 'front' ? frontType : backType) === 'application/pdf' ? (
+                      <iframe title="Student ID PDF" src={activeSide === 'front' ? frontUrl : backUrl} className="h-[55vh] w-full rounded-xl" />
+                    ) : (
+                      <div className="flex items-center justify-center w-full h-full p-2">
+                        <img
+                          src={activeSide === 'front' ? frontUrl : backUrl}
+                          alt={`Uploaded student document preview (${activeSide})`}
+                          className="max-h-[55vh] max-w-full object-contain rounded-xl shadow-xs transition-transform duration-150"
+                          style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
+                        />
+                      </div>
+                    )
+                  ) : activeSide === 'back' ? (
+                    <div className="flex flex-col items-center justify-center p-8 text-center space-y-2">
+                      <ShieldCheck size={36} className="text-slate-400" />
+                      <p className="text-sm font-bold text-slate-800">Back Side Not Submitted</p>
+                      <p className="text-xs text-slate-500 max-w-sm">
+                        The student uploaded only the front side of their student identity card.
+                      </p>
                     </div>
                   ) : (
                     <p className="p-6 text-center text-xs text-slate-500">Document preview is unavailable.</p>

@@ -51,10 +51,11 @@ export default function StudentVerificationPage({
   const [studentCourse, setStudentCourse] = useState('');
   const [studentEmail, setStudentEmail] = useState(student?.email || '');
   const [paymentPhone, setPaymentPhone] = useState(student?.mobile || '');
-  const [captchaAnswer, setCaptchaAnswer] = useState('');
   const [puzzleAnswer, setPuzzleAnswer] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string>('');
+  const [backFile, setBackFile] = useState<File | null>(null);
+  const [backFilePreview, setBackFilePreview] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -124,6 +125,17 @@ export default function StudentVerificationPage({
     }
   };
 
+  const handleBackFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0] || null;
+    setBackFile(picked);
+    if (picked && picked.type.startsWith('image/')) {
+      const url = URL.createObjectURL(picked);
+      setBackFilePreview(url);
+    } else {
+      setBackFilePreview('');
+    }
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!accessToken) {
@@ -138,8 +150,8 @@ export default function StudentVerificationPage({
       setError('Upload a JPEG, PNG, or PDF document.');
       return;
     }
-    if (file.size > 2_000_000) {
-      setError('The document must be no larger than 2 MB.');
+    if (file.size > 5_000_000) {
+      setError('The document must be no larger than 5 MB.');
       return;
     }
     const answer = Number(puzzleAnswer);
@@ -151,24 +163,55 @@ export default function StudentVerificationPage({
     setError('');
     setMessage('');
     try {
-      await StudentVerificationAPI.submit(
-        accessToken,
-        file,
-        paymentPhone,
-        challenge,
-        captchaAnswer.trim().toUpperCase(),
-        answer,
-        {
-          student_name: studentName.trim() || student?.fullName || 'Student',
-          email: studentEmail.trim() || student?.email,
-          college: studentCollege.trim() || student?.collegeName || 'College / University',
-          course: studentCourse.trim() || 'Degree / Department',
-          user_id: student?.id
-        }
-      );
-      setMessage(verification ? 'Resubmission received. Your updated document is pending review.' : 'Your document was submitted and is pending review.');
+      // 1. Convert files to data URLs
+      const frontDataUrl = filePreview || await new Promise<string>((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.readAsDataURL(file);
+      });
+
+      let backDataUrl = '';
+      if (backFile) {
+        backDataUrl = backFilePreview || await new Promise<string>((res) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result as string);
+          r.readAsDataURL(backFile);
+        });
+      }
+
+      // 2. Build FormData
+      const formData = new FormData();
+      formData.append('front_image', file);
+      if (backFile) formData.append('back_image', backFile);
+      formData.append('student_name', studentName.trim() || student?.fullName || 'Student');
+      formData.append('email', studentEmail.trim() || student?.email || '');
+      formData.append('phone', paymentPhone);
+      formData.append('college', studentCollege.trim() || student?.collegeName || 'College / University');
+      formData.append('course', studentCourse.trim() || 'Degree / Department');
+      formData.append('user_id', student?.id || '');
+      formData.append('student_id_code', student?.id || 'STU-2026-0001');
+      formData.append('referral_code', 'A7K2');
+
+      await StudentVerificationAPI.submitDual(formData, {
+        student_name: studentName.trim() || student?.fullName || 'Student',
+        email: studentEmail.trim() || student?.email || 'student@umu.ac.in',
+        phone: paymentPhone,
+        college: studentCollege.trim() || student?.collegeName || 'Usha Martin University',
+        course: studentCourse.trim() || 'B.Tech Computer Science',
+        student_id_code: student?.id || 'STU-2026-0001',
+        referral_code: 'A7K2',
+        front_data_url: frontDataUrl,
+        back_data_url: backDataUrl,
+        front_filename: file.name,
+        back_filename: backFile ? backFile.name : undefined,
+        user_id: student?.id || 'STU-2026-0001'
+      });
+
+      setMessage(verification ? 'Resubmission received. Your updated documents are pending review.' : 'Your ID documents were submitted and are pending review.');
       setFile(null);
       setFilePreview('');
+      setBackFile(null);
+      setBackFilePreview('');
       setCaptchaAnswer('');
       setPuzzleAnswer('');
       setLoading(true);
@@ -260,19 +303,40 @@ export default function StudentVerificationPage({
                   <input required minLength={7} maxLength={32} value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} placeholder="+91 98765 43210" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
                 </label>
 
-                <label className="block text-xs font-semibold text-slate-700">Upload Student College ID Card (JPEG, PNG, or PDF · maximum 2 MB)
-                  <span className="mt-1 flex flex-wrap items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4">
-                    <Upload size={20} className="text-indigo-600" />
-                    <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={handleFileChange} required={!verification} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
-                  </span>
-                  {file && <span className="mt-1 block font-normal text-slate-500">{file.name} · {(file.size / 1024).toFixed(0)} KB</span>}
-                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block text-xs font-semibold text-slate-700">Upload ID Card (Front Side)
+                    <span className="mt-1 flex flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3">
+                      <Upload size={18} className="text-indigo-600" />
+                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFileChange} required={!verification} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
+                    </span>
+                    {file && <span className="mt-1 block font-normal text-slate-500 text-[11px]">{file.name} · {(file.size / 1024).toFixed(0)} KB</span>}
+                  </label>
 
-                {filePreview && (
+                  <label className="block text-xs font-semibold text-slate-700">Upload ID Card (Back Side)
+                    <span className="mt-1 flex flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3">
+                      <Upload size={18} className="text-indigo-600" />
+                      <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleBackFileChange} className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-50 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 cursor-pointer" />
+                    </span>
+                    {backFile && <span className="mt-1 block font-normal text-slate-500 text-[11px]">{backFile.name} · {(backFile.size / 1024).toFixed(0)} KB</span>}
+                  </label>
+                </div>
+
+                {(filePreview || backFilePreview) && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[11px] font-semibold text-slate-600 mb-2">Selected ID Document Preview:</p>
-                    <div className="flex justify-center max-h-56 overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
-                      <img src={filePreview} alt="Selected ID Card" className="max-h-52 object-contain rounded" />
+                    <p className="text-[11px] font-semibold text-slate-600 mb-2">Selected ID Document Previews:</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {filePreview && (
+                        <div className="flex flex-col items-center max-h-48 overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                          <span className="text-[10px] font-bold text-slate-500 mb-1">Front Side</span>
+                          <img src={filePreview} alt="Selected Front ID Card" className="max-h-36 object-contain rounded" />
+                        </div>
+                      )}
+                      {backFilePreview && (
+                        <div className="flex flex-col items-center max-h-48 overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                          <span className="text-[10px] font-bold text-slate-500 mb-1">Back Side</span>
+                          <img src={backFilePreview} alt="Selected Back ID Card" className="max-h-36 object-contain rounded" />
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

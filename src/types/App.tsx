@@ -4,7 +4,7 @@ import {
   Lock, FileText, Award, HelpCircle, LogOut, Menu, X, ChevronRight,
   ChevronLeft, Upload, ExternalLink, CreditCard,
   Layers, Code2, Cpu, Smartphone, Database, Cloud, Sparkles,
-  Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2
+  Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2, RefreshCw
 } from 'lucide-react';
 import {
   ProjectCategory, ProjectDTO,
@@ -17,7 +17,7 @@ import {
 import { AdminAuthAPI, AdminAuthError } from './adminAuthService';
 import { getPublicProjects, ProjectCatalogueError, useMockCatalogue } from './projectCatalogueService';
 import StudentVerificationPage from './StudentVerificationPage';
-import { StudentAuthAPI, StudentTokenResponse, VerificationApiError } from './verificationService';
+import { StudentAuthAPI, StudentTokenResponse, VerificationApiError, StudentVerificationAPI } from './verificationService';
 import { StudentCommerceAPI, StudentOrderRecord } from './commerceService';
 import StudentCommercePanel from './StudentCommercePanel';
 import AdminDashboard from './admin/AdminDashboard';
@@ -148,6 +148,94 @@ export default function App() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [checkoutOrder, setCheckoutOrder] = useState<StudentOrderRecord | null>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+
+  // Student ID Card Verification Upload States
+  const [idCardFrontFile, setIdCardFrontFile] = useState<File | null>(null);
+  const [idCardBackFile, setIdCardBackFile] = useState<File | null>(null);
+  const [idCardFrontPreview, setIdCardFrontPreview] = useState<string>('');
+  const [idCardBackPreview, setIdCardBackPreview] = useState<string>('');
+  const [idCardSubmitting, setIdCardSubmitting] = useState<boolean>(false);
+
+  const handleFrontIdFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIdCardFrontFile(file);
+      const reader = new FileReader();
+      reader.onload = () => setIdCardFrontPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleBackIdFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIdCardBackFile(file);
+      const reader = new FileReader();
+      reader.onload = () => setIdCardBackPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmitStudentVerification = async () => {
+    if (!idCardFrontFile) {
+      showToast('Please select at least the ID Card (Front Side) image.', 'error');
+      return;
+    }
+    setIdCardSubmitting(true);
+    try {
+      const frontDataUrl = idCardFrontPreview || await new Promise<string>((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.readAsDataURL(idCardFrontFile);
+      });
+
+      let backDataUrl = '';
+      if (idCardBackFile) {
+        backDataUrl = idCardBackPreview || await new Promise<string>((res) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result as string);
+          r.readAsDataURL(idCardBackFile);
+        });
+      }
+
+      // Build standard multipart FormData
+      const formData = new FormData();
+      formData.append('front_image', idCardFrontFile);
+      if (idCardBackFile) {
+        formData.append('back_image', idCardBackFile);
+      }
+      formData.append('student_name', currentStudentName);
+      formData.append('email', student.email || 'student@umu.ac.in');
+      formData.append('phone', student.mobile || '7004273758');
+      formData.append('college', currentCollege);
+      formData.append('course', student.department || 'B.Tech Computer Science');
+      formData.append('student_id_code', currentStudentId);
+      formData.append('referral_code', currentAkReferralCode);
+      formData.append('user_id', currentStudentId);
+
+      await StudentVerificationAPI.submitDual(formData, {
+        student_name: currentStudentName,
+        email: student.email || 'student@umu.ac.in',
+        phone: student.mobile || '7004273758',
+        college: currentCollege,
+        course: student.department || 'B.Tech Computer Science',
+        student_id_code: currentStudentId,
+        referral_code: currentAkReferralCode,
+        front_data_url: frontDataUrl,
+        back_data_url: backDataUrl,
+        front_filename: idCardFrontFile.name,
+        back_filename: idCardBackFile ? idCardBackFile.name : undefined,
+        user_id: currentStudentId
+      });
+
+      setStudent((prev) => ({ ...prev, authState: 'verification_pending' }));
+      showToast('ID documents (Front & Back) successfully submitted! Admin review pending.', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to submit ID documents. Please try again.', 'error');
+    } finally {
+      setIdCardSubmitting(false);
+    }
+  };
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
@@ -2045,35 +2133,108 @@ export default function App() {
 
               {/* MODIFIED: Upload ID Card Front & Back Panel */}
               {student.authState !== 'verified' && (
-                <div className="mt-6 bg-amber-50 border border-amber-200 rounded-2xl p-6">
-                  <div className="flex items-center gap-2 mb-2">
-                    <ShieldCheck className="w-5 h-5 text-amber-600" />
-                    <h3 className="text-lg font-bold text-amber-900">Complete Your Student Verification</h3>
+                <div className="mt-6 bg-amber-50/80 border border-amber-200 rounded-3xl p-6 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-amber-600" />
+                      <h3 className="text-lg font-bold text-amber-900">Complete Your Student Verification</h3>
+                    </div>
+                    {student.authState === 'verification_pending' && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-200 text-amber-900">
+                        <CheckCircle2 size={13} className="text-amber-700" /> Under Admin Review
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs text-amber-800 mb-4">
+                  <p className="text-xs text-amber-800 mb-5">
                     Please upload clear images of the front and back of your valid college/university ID card. Without verification, PPT previews are locked.
                   </p>
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <div className="border-2 border-dashed border-amber-300 rounded-xl p-5 text-center bg-white hover:bg-amber-50/50 transition-colors cursor-pointer">
-                      <Upload className="w-6 h-6 text-amber-500 mx-auto mb-2" />
-                      <label className="block text-xs font-bold text-slate-700 mb-1">ID Card (Front Side)</label>
-                      <input type="file" className="text-[10px] text-slate-500 w-full" />
+                    {/* Front Side Card */}
+                    <div className={`relative rounded-2xl border-2 border-dashed p-4 text-center transition-all ${idCardFrontFile ? 'border-emerald-400 bg-white shadow-xs' : 'border-amber-300 bg-white hover:bg-amber-50/50'}`}>
+                      {idCardFrontPreview ? (
+                        <div className="space-y-2">
+                          <div className="relative mx-auto h-32 w-full max-w-[240px] overflow-hidden rounded-xl border border-slate-200 bg-slate-900/5 shadow-inner">
+                            <img src={idCardFrontPreview} alt="Front ID Preview" className="h-full w-full object-contain" />
+                            <span className="absolute top-2 right-2 rounded-full bg-emerald-600 p-1 text-white shadow-xs">
+                              <CheckCircle2 size={13} />
+                            </span>
+                          </div>
+                          <p className="truncate text-xs font-bold text-slate-800">{idCardFrontFile?.name}</p>
+                          <p className="text-[10px] text-slate-500 font-mono">{(idCardFrontFile!.size / 1024).toFixed(0)} KB • ID Card (Front Side)</p>
+                          <label className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">
+                            <Upload size={12} /> Change Front Image
+                            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFrontIdFileChange} className="hidden" />
+                          </label>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center cursor-pointer py-4">
+                          <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 mb-2">
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <span className="block text-xs font-bold text-slate-800 mb-0.5">ID Card (Front Side)</span>
+                          <span className="text-[11px] text-slate-500 mb-2">JPEG or PNG format (max 5 MB)</span>
+                          <span className="px-3 py-1.5 rounded-lg bg-amber-100/70 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-colors">
+                            Choose Front File
+                          </span>
+                          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleFrontIdFileChange} className="hidden" />
+                        </label>
+                      )}
                     </div>
-                    <div className="border-2 border-dashed border-amber-300 rounded-xl p-5 text-center bg-white hover:bg-amber-50/50 transition-colors cursor-pointer">
-                      <Upload className="w-6 h-6 text-amber-500 mx-auto mb-2" />
-                      <label className="block text-xs font-bold text-slate-700 mb-1">ID Card (Back Side)</label>
-                      <input type="file" className="text-[10px] text-slate-500 w-full" />
+
+                    {/* Back Side Card */}
+                    <div className={`relative rounded-2xl border-2 border-dashed p-4 text-center transition-all ${idCardBackFile ? 'border-emerald-400 bg-white shadow-xs' : 'border-amber-300 bg-white hover:bg-amber-50/50'}`}>
+                      {idCardBackPreview ? (
+                        <div className="space-y-2">
+                          <div className="relative mx-auto h-32 w-full max-w-[240px] overflow-hidden rounded-xl border border-slate-200 bg-slate-900/5 shadow-inner">
+                            <img src={idCardBackPreview} alt="Back ID Preview" className="h-full w-full object-contain" />
+                            <span className="absolute top-2 right-2 rounded-full bg-emerald-600 p-1 text-white shadow-xs">
+                              <CheckCircle2 size={13} />
+                            </span>
+                          </div>
+                          <p className="truncate text-xs font-bold text-slate-800">{idCardBackFile?.name}</p>
+                          <p className="text-[10px] text-slate-500 font-mono">{(idCardBackFile!.size / 1024).toFixed(0)} KB • ID Card (Back Side)</p>
+                          <label className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">
+                            <Upload size={12} /> Change Back Image
+                            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleBackIdFileChange} className="hidden" />
+                          </label>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center cursor-pointer py-4">
+                          <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 mb-2">
+                            <Upload className="w-5 h-5" />
+                          </div>
+                          <span className="block text-xs font-bold text-slate-800 mb-0.5">ID Card (Back Side)</span>
+                          <span className="text-[11px] text-slate-500 mb-2">JPEG or PNG format (max 5 MB)</span>
+                          <span className="px-3 py-1.5 rounded-lg bg-amber-100/70 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-colors">
+                            Choose Back File
+                          </span>
+                          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleBackIdFileChange} className="hidden" />
+                        </label>
+                      )}
                     </div>
                   </div>
+
                   <button
-                    onClick={() => {
-                      setStudent({ ...student, authState: 'verification_pending' });
-                      showToast('ID documents submitted for admin review!', 'success');
-                    }}
-                    className="mt-4 w-full py-2.5 bg-amber-500 hover:bg-amber-600 text-amber-950 text-sm font-bold rounded-xl transition-all"
+                    type="button"
+                    disabled={idCardSubmitting || !idCardFrontFile}
+                    onClick={handleSubmitStudentVerification}
+                    className="mt-5 w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-amber-950 text-sm font-bold rounded-2xl transition-all shadow-xs flex items-center justify-center gap-2"
                   >
-                    Submit Documents for Verification
+                    {idCardSubmitting ? (
+                      <>
+                        <RefreshCw size={16} className="animate-spin" /> Submitting Documents for Verification...
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={16} /> Submit Documents for Verification
+                      </>
+                    )}
                   </button>
+                  {student.authState === 'verification_pending' && (
+                    <p className="mt-2.5 text-center text-xs text-amber-900 font-medium">
+                      ✓ Your documents have been submitted to the Uvikart administrator queue. Status will update automatically once verified.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

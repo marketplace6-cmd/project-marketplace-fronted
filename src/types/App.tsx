@@ -291,6 +291,22 @@ export default function App() {
     };
   }, []);
 
+  // Real-time listener for catalogue updates dispatched from Admin or storage
+  useEffect(() => {
+    const handleCatalogUpdate = () => {
+      void getPublicProjects()
+        .then((result) => {
+          setCatalogueError('');
+          setProjects(result);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('uvikart-catalogue-updated', handleCatalogUpdate);
+    return () => {
+      window.removeEventListener('uvikart-catalogue-updated', handleCatalogUpdate);
+    };
+  }, []);
+
   const loadPublicCatalogue = useCallback(async () => {
     if (useMockCatalogue) return;
     setCatalogueLoading(true);

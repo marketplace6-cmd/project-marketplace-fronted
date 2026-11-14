@@ -1,4 +1,5 @@
 import { supabase } from '../utils/supabase/client';
+import { INITIAL_PROJECTS } from './mockData';
 
 export type CatalogueStatus = 'DRAFT' | 'PUBLISHED' | 'SOLD_OUT';
 
@@ -10,6 +11,9 @@ export interface AdminProject {
   category: string;
   project_type: string;
   short_description: string;
+  problem_statement?: string;
+  feature_categories?: string[];
+  deliverables?: string[];
   difficulty: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
   technology_stack: string;
   suitable_courses: string;
@@ -34,11 +38,14 @@ export interface AdminProjectInput {
   category: string;
   project_type: string;
   short_description: string;
+  problem_statement?: string;
+  feature_categories?: string[];
+  deliverables?: string[];
   difficulty: AdminProject['difficulty'];
   technology_stack: string;
   suitable_courses: string;
   price: number;
-  publication_status: 'PUBLISHED' | 'SOLD_OUT';
+  publication_status: 'PUBLISHED' | 'SOLD_OUT' | 'DRAFT';
 }
 
 export class AdminCatalogError extends Error {
@@ -93,6 +100,9 @@ function parseProject(value: unknown): AdminProject {
     category: value.category,
     project_type: value.project_type,
     short_description: value.short_description,
+    problem_statement: typeof value.problem_statement === 'string' ? value.problem_statement : '',
+    feature_categories: Array.isArray(value.feature_categories) ? value.feature_categories : [],
+    deliverables: Array.isArray(value.deliverables) ? value.deliverables : [],
     difficulty: value.difficulty,
     technology_stack: value.technology_stack,
     suitable_courses: value.suitable_courses,
@@ -162,11 +172,43 @@ async function request(
 // --- Local mock store ---
 const LOCAL_CATALOG_KEY = 'cpm_admin_catalog';
 
+function notifyCatalogChange() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('uvikart-catalogue-updated'));
+  }
+}
+
 function loadLocalCatalog(): AdminProject[] {
   try {
     const raw = localStorage.getItem(LOCAL_CATALOG_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch { /* ignore */ }
+
+  const initialSeed: AdminProject[] = INITIAL_PROJECTS.map((p, idx) => ({
+    id: 100 + idx + 1,
+    project_code: p.id || `PRJ-${100 + idx + 1}`,
+    topic_name: p.title,
+    title: p.title,
+    category: p.category,
+    project_type: p.projectType,
+    short_description: p.shortDescription,
+    problem_statement: p.problemStatement,
+    difficulty: (p.difficulty ? p.difficulty.toUpperCase() : 'INTERMEDIATE') as any,
+    technology_stack: p.technologies ? p.technologies.join(', ') : '',
+    suitable_courses: p.suitableBranches ? p.suitableBranches.join(', ') : '',
+    feature_categories: p.featureCategories || [],
+    deliverables: p.deliverables || [],
+    price: p.price || 1499,
+    publication_status: 'PUBLISHED',
+    has_ppt: Boolean(p.previewEligible),
+    created_at: new Date(Date.now() - (idx + 1) * 86400000).toISOString(),
+    updated_at: new Date().toISOString()
+  }));
+  saveLocalCatalog(initialSeed);
+  return initialSeed;
 }
 
 function saveLocalCatalog(items: AdminProject[]): void {
@@ -185,6 +227,9 @@ function makeLocalProject(fields: AdminProjectInput): AdminProject {
     category: fields.category,
     project_type: fields.project_type,
     short_description: fields.short_description,
+    problem_statement: fields.problem_statement || '',
+    feature_categories: fields.feature_categories || [],
+    deliverables: fields.deliverables || [],
     difficulty: fields.difficulty,
     technology_stack: fields.technology_stack,
     suitable_courses: fields.suitable_courses,
@@ -202,7 +247,8 @@ function filterLocalCatalog(
 ): AdminProject[] {
   return items.filter((p) => {
     if (filters.search && !p.title.toLowerCase().includes(filters.search.toLowerCase()) &&
-        !p.project_code.toLowerCase().includes(filters.search.toLowerCase())) return false;
+        !p.project_code.toLowerCase().includes(filters.search.toLowerCase()) &&
+        !p.technology_stack.toLowerCase().includes(filters.search.toLowerCase())) return false;
     if (filters.category && p.category !== filters.category) return false;
     if (filters.projectType && p.project_type !== filters.projectType) return false;
     if (filters.status && p.publication_status !== filters.status) return false;
@@ -223,122 +269,155 @@ export const AdminCatalogAPI = {
     query.set('page', String(filters.page));
     query.set('page_size', '50');
     try {
-      return await request(`/admin/projects?${query.toString()}`, accessToken).then(parseProjectList);
+      const serverList = await request(`/admin/projects?${query.toString()}`, accessToken).then(parseProjectList);
+      if (serverList && serverList.items.length > 0) {
+        return serverList;
+      }
     } catch {
-      // 1. Try Supabase
-      try {
-        let sbQuery = supabase.from('projects').select('*', { count: 'exact' });
-        if (filters.category) sbQuery = sbQuery.eq('category', filters.category);
-        if (filters.projectType) sbQuery = sbQuery.eq('project_type', filters.projectType);
-        if (filters.status) sbQuery = sbQuery.eq('publication_status', filters.status);
-        if (filters.search) {
-          sbQuery = sbQuery.or(`title.ilike.%${filters.search}%,project_code.ilike.%${filters.search}%,topic_name.ilike.%${filters.search}%`);
-        }
+      // Fallback
+    }
 
-        const { data, count, error } = await sbQuery.order('id', { ascending: false });
-        if (!error && data && data.length > 0) {
-          const items: AdminProject[] = data.map((d: any) => ({
-            id: Number(d.id),
-            project_code: d.project_code || `PRJ-${d.id}`,
-            topic_name: d.topic_name || d.title,
-            title: d.title,
-            category: d.category,
-            project_type: d.project_type,
-            short_description: d.short_description,
-            difficulty: d.difficulty || 'BEGINNER',
-            technology_stack: d.technology_stack,
-            suitable_courses: d.suitable_courses,
-            price: Number(d.price),
-            publication_status: d.publication_status,
-            has_ppt: Boolean(d.has_ppt),
-            created_at: d.created_at || new Date().toISOString(),
-            updated_at: d.updated_at || new Date().toISOString()
-          }));
-          const total = count || items.length;
-          const active = items.filter((p) => p.publication_status === 'PUBLISHED').length;
-          const soldOut = items.filter((p) => p.publication_status === 'SOLD_OUT').length;
-          return {
-            items,
-            total,
-            total_projects: total,
-            active_projects: active,
-            sold_out_projects: soldOut
-          };
-        }
-      } catch {
-        /* proceed to localStorage */
+    // 1. Try Supabase
+    try {
+      let sbQuery = supabase.from('projects').select('*', { count: 'exact' });
+      if (filters.category) sbQuery = sbQuery.eq('category', filters.category);
+      if (filters.projectType) sbQuery = sbQuery.eq('project_type', filters.projectType);
+      if (filters.status) sbQuery = sbQuery.eq('publication_status', filters.status);
+      if (filters.search) {
+        sbQuery = sbQuery.or(`title.ilike.%${filters.search}%,project_code.ilike.%${filters.search}%,topic_name.ilike.%${filters.search}%`);
       }
 
-      // 2. Offline fallback: use localStorage
-      const all = loadLocalCatalog();
-      const filtered = filterLocalCatalog(all, filters);
-      const active = filtered.filter((p) => p.publication_status === 'PUBLISHED').length;
-      const soldOut = filtered.filter((p) => p.publication_status === 'SOLD_OUT').length;
-      return {
-        items: filtered,
-        total: filtered.length,
-        total_projects: filtered.length,
-        active_projects: active,
-        sold_out_projects: soldOut
-      };
+      const { data, count, error } = await sbQuery.order('id', { ascending: false });
+      if (!error && data && data.length > 0) {
+        const items: AdminProject[] = data.map((d: any) => ({
+          id: Number(d.id),
+          project_code: d.project_code || `PRJ-${d.id}`,
+          topic_name: d.topic_name || d.title,
+          title: d.title,
+          category: d.category,
+          project_type: d.project_type,
+          short_description: d.short_description,
+          problem_statement: d.problem_statement || '',
+          feature_categories: Array.isArray(d.feature_categories) ? d.feature_categories : [],
+          deliverables: Array.isArray(d.deliverables) ? d.deliverables : [],
+          difficulty: d.difficulty || 'BEGINNER',
+          technology_stack: d.technology_stack || '',
+          suitable_courses: d.suitable_courses || '',
+          price: Number(d.price),
+          publication_status: d.publication_status,
+          has_ppt: Boolean(d.has_ppt),
+          created_at: d.created_at || new Date().toISOString(),
+          updated_at: d.updated_at || new Date().toISOString()
+        }));
+        const total = count || items.length;
+        const active = items.filter((p) => p.publication_status === 'PUBLISHED').length;
+        const soldOut = items.filter((p) => p.publication_status === 'SOLD_OUT').length;
+        return {
+          items,
+          total,
+          total_projects: total,
+          active_projects: active,
+          sold_out_projects: soldOut
+        };
+      }
+    } catch {
+      /* proceed to localStorage */
     }
+
+    // 2. Offline fallback: use localStorage
+    const all = loadLocalCatalog();
+    const filtered = filterLocalCatalog(all, filters);
+    const active = filtered.filter((p) => p.publication_status === 'PUBLISHED').length;
+    const soldOut = filtered.filter((p) => p.publication_status === 'SOLD_OUT').length;
+    return {
+      items: filtered,
+      total: filtered.length,
+      total_projects: filtered.length,
+      active_projects: active,
+      sold_out_projects: soldOut
+    };
   },
 
   async create(accessToken: string, fields: AdminProjectInput, presentation: File | null): Promise<AdminProject> {
+    const newProject = makeLocalProject(fields);
+    if (presentation) newProject.has_ppt = true;
+
+    // Save to local catalog first for immediate response
+    const existing = loadLocalCatalog();
+    saveLocalCatalog([newProject, ...existing]);
+    notifyCatalogChange();
+
     try {
       const body = new FormData();
-      Object.entries(fields).forEach(([key, value]) => body.append(key, String(value)));
+      Object.entries(fields).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          if (Array.isArray(value)) {
+            body.append(key, value.join(', '));
+          } else {
+            body.append(key, String(value));
+          }
+        }
+      });
       if (presentation) body.append('presentation', presentation);
-      return parseProject(await request('/admin/projects', accessToken, { method: 'POST', body }));
+      const serverRes = await request('/admin/projects', accessToken, { method: 'POST', body });
+      const parsed = parseProject(serverRes);
+      const updatedLocal = loadLocalCatalog().map((p) => (p.id === newProject.id ? { ...p, id: parsed.id, project_code: parsed.project_code } : p));
+      saveLocalCatalog(updatedLocal);
+      notifyCatalogChange();
+      return parsed;
     } catch {
-      // 1. Save to Supabase
-      const newProject = makeLocalProject(fields);
       try {
-        const { data, error } = await supabase.from('projects').insert([{
+        await supabase.from('projects').insert([{
           project_code: newProject.project_code,
           topic_name: newProject.topic_name,
           title: newProject.title,
           category: newProject.category,
           project_type: newProject.project_type,
           short_description: newProject.short_description,
+          problem_statement: newProject.problem_statement,
           difficulty: newProject.difficulty,
           technology_stack: newProject.technology_stack,
           suitable_courses: newProject.suitable_courses,
+          feature_categories: newProject.feature_categories,
+          deliverables: newProject.deliverables,
           price: newProject.price,
           publication_status: newProject.publication_status,
           has_ppt: Boolean(presentation)
-        }]).select();
-
-        if (!error && data && data[0]) {
-          const created: AdminProject = {
-            ...newProject,
-            id: Number(data[0].id),
-            project_code: data[0].project_code || newProject.project_code
-          };
-          const existing = loadLocalCatalog();
-          saveLocalCatalog([created, ...existing]);
-          return created;
-        }
+        }]);
       } catch {
-        /* fallback to local */
+        /* already in localStorage */
       }
-
-      // 2. Offline fallback: save to localStorage
-      const existing = loadLocalCatalog();
-      saveLocalCatalog([newProject, ...existing]);
       return newProject;
     }
   },
 
   async update(accessToken: string, projectId: number, fields: Partial<AdminProjectInput>): Promise<AdminProject> {
+    const existing = loadLocalCatalog();
+    const idx = existing.findIndex((p) => p.id === projectId);
+    let updatedLocal: AdminProject | null = null;
+    if (idx !== -1) {
+      updatedLocal = {
+        ...existing[idx],
+        ...Object.fromEntries(
+          Object.entries(fields).filter(([, v]) => v !== undefined)
+        ),
+        updated_at: new Date().toISOString()
+      };
+      existing[idx] = updatedLocal;
+      saveLocalCatalog(existing);
+      notifyCatalogChange();
+    }
+
     try {
       const { publication_status: _ignored, ...editableFields } = fields;
-      return parseProject(await request(`/admin/projects/${projectId}`, accessToken, {
+      const serverRes = await request(`/admin/projects/${projectId}`, accessToken, {
         method: 'PUT',
         body: JSON.stringify(editableFields)
-      }));
+      });
+      const parsed = parseProject(serverRes);
+      notifyCatalogChange();
+      return parsed;
     } catch {
-      // 1. Update in Supabase
       try {
         await supabase.from('projects').update({
           ...fields,
@@ -348,31 +427,30 @@ export const AdminCatalogAPI = {
         /* ignore */
       }
 
-      // 2. Offline fallback: update in localStorage
-      const existing = loadLocalCatalog();
-      const idx = existing.findIndex((p) => p.id === projectId);
-      if (idx === -1) throw new AdminCatalogError('Project not found.', 404);
-      const updated: AdminProject = {
-        ...existing[idx],
-        ...Object.fromEntries(
-          Object.entries(fields).filter(([, v]) => v !== undefined)
-        ),
-        updated_at: new Date().toISOString()
-      };
-      existing[idx] = updated;
-      saveLocalCatalog(existing);
-      return updated;
+      if (updatedLocal) return updatedLocal;
+      throw new AdminCatalogError('Project not found.', 404);
     }
   },
 
   async markSoldOut(accessToken: string, projectId: number): Promise<AdminProject> {
+    const existing = loadLocalCatalog();
+    const idx = existing.findIndex((p) => p.id === projectId);
+    let updated: AdminProject | null = null;
+    if (idx !== -1) {
+      existing[idx] = { ...existing[idx], publication_status: 'SOLD_OUT', updated_at: new Date().toISOString() };
+      updated = existing[idx];
+      saveLocalCatalog(existing);
+      notifyCatalogChange();
+    }
+
     try {
-      return parseProject(await request(`/admin/projects/${projectId}/sold-out`, accessToken, {
+      const serverRes = await request(`/admin/projects/${projectId}/sold-out`, accessToken, {
         method: 'POST',
         body: JSON.stringify({})
-      }));
+      });
+      notifyCatalogChange();
+      return parseProject(serverRes);
     } catch {
-      // 1. Update status in Supabase
       try {
         await supabase.from('projects').update({
           publication_status: 'SOLD_OUT',
@@ -382,33 +460,26 @@ export const AdminCatalogAPI = {
         /* ignore */
       }
 
-      // 2. Offline fallback: update status in localStorage
-      const existing = loadLocalCatalog();
-      const idx = existing.findIndex((p) => p.id === projectId);
-      if (idx === -1) throw new AdminCatalogError('Project not found.', 404);
-      existing[idx] = { ...existing[idx], publication_status: 'SOLD_OUT', updated_at: new Date().toISOString() };
-      saveLocalCatalog(existing);
-      return existing[idx];
+      if (updated) return updated;
+      throw new AdminCatalogError('Project not found.', 404);
     }
   },
 
   async delete(accessToken: string, projectId: number): Promise<void> {
+    const existing = loadLocalCatalog();
+    saveLocalCatalog(existing.filter((p) => p.id !== projectId));
+    notifyCatalogChange();
+
     try {
       await request(`/admin/projects/${projectId}`, accessToken, {
         method: 'DELETE'
       });
     } catch {
-      // 1. Delete in Supabase
       try {
         await supabase.from('projects').delete().eq('id', projectId);
       } catch {
         /* ignore */
       }
-
-      // 2. Offline fallback: delete from localStorage
-      const existing = loadLocalCatalog();
-      const filtered = existing.filter((p) => p.id !== projectId);
-      saveLocalCatalog(filtered);
     }
   }
 };

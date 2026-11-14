@@ -550,6 +550,7 @@ export default function AdminDashboard({
             <AdminCatalogPage
               accessToken={accessToken}
               onSessionExpired={onSessionExpired}
+              onChanged={refreshDashboard}
             />
           ) : activeSection === 'verification' ? (
             <AdminVerificationPage

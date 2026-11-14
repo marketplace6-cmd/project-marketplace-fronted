@@ -69,8 +69,12 @@ function mapProject(value: unknown): ProjectDTO {
     technologies: splitList(value.technology_stack),
     difficulty,
     suitableBranches: splitList(value.suitable_courses),
-    featureCategories: [],
-    deliverables: splitList(value.deliverables),
+    featureCategories: Array.isArray(value.feature_categories)
+      ? value.feature_categories.filter((f): f is string => typeof f === 'string')
+      : splitList(value.feature_categories),
+    deliverables: Array.isArray(value.deliverables)
+      ? value.deliverables.filter((d): d is string => typeof d === 'string')
+      : splitList(value.deliverables),
     previewEligible: hasPpt && !soldOut,
     hasPpt,
     availability: soldOut ? 'SOLD_OUT' : 'ACTIVE',

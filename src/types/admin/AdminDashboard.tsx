@@ -19,7 +19,8 @@ import {
   ShoppingBag,
   Users,
   Video,
-  X
+  X,
+  GraduationCap
 } from 'lucide-react';
 import {
   AdminAuthAPI,
@@ -33,6 +34,7 @@ import AdminVerificationPage from './AdminVerificationPage';
 import AdminMeetingsOrdersPage from './AdminMeetingsOrdersPage';
 import AdminReferralPage from './AdminReferralPage';
 import AdminSecurityPage from './AdminSecurityPage';
+import MentorDashboard from '../mentor/MentorDashboard';
 
 type AdminSection =
   | 'overview'
@@ -40,6 +42,7 @@ type AdminSection =
   | 'verification'
   | 'meetings-orders'
   | 'referrals'
+  | 'mentor'
   | 'notifications'
   | 'profile';
 
@@ -47,6 +50,8 @@ interface AdminDashboardProps {
   accessToken: string;
   onLogout: () => void;
   onSessionExpired: () => void;
+  initialSection?: AdminSection;
+  onNavigate?: (route: any) => void;
 }
 
 const navigation: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] = [
@@ -55,6 +60,7 @@ const navigation: { id: AdminSection; label: string; icon: typeof LayoutDashboar
   { id: 'verification', label: 'Student ID Verification', icon: FileCheck2 },
   { id: 'meetings-orders', label: 'Meetings & Orders', icon: ClipboardList },
   { id: 'referrals', label: 'Referral Management', icon: CircleDollarSign },
+  { id: 'mentor', label: 'Mentor Portal (Direct Deals)', icon: GraduationCap },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'profile', label: 'Admin Profile & Security', icon: ShieldCheck }
 ];
@@ -129,12 +135,14 @@ function AdminOverview({
   summary,
   loading,
   error,
-  onRetry
+  onRetry,
+  onSelectSection
 }: {
   summary: AdminDashboardSummary | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  onSelectSection?: (section: AdminSection) => void;
 }) {
   if (loading) {
     return (
@@ -191,6 +199,28 @@ function AdminOverview({
             unavailable={summary.unavailable[metric.key]}
           />
         ))}
+      </section>
+
+      {/* Mentor Pipeline Admin Supervision Banner */}
+      <section className="rounded-2xl border border-indigo-200/80 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-400/30">
+            <GraduationCap className="w-3.5 h-3.5 text-indigo-300" />
+            Lead Mentor Deal Supervision
+          </div>
+          <h3 className="text-lg font-bold">Mentor Direct Deals & Deliveries Workspace</h3>
+          <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+            Oversee direct student enquiries, negotiated package pricing, mentor payment verification submissions, and WhatsApp/Drive asset deliveries.
+          </p>
+        </div>
+        {onSelectSection && (
+          <button
+            onClick={() => onSelectSection('mentor')}
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-colors shrink-0 shadow-sm inline-flex items-center gap-2"
+          >
+            Open Mentor Portal &rarr;
+          </button>
+        )}
       </section>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -306,8 +336,14 @@ function AdminSidebar({
   );
 }
 
-export default function AdminDashboard({ accessToken, onLogout, onSessionExpired }: AdminDashboardProps) {
-  const [activeSection, setActiveSection] = useState<AdminSection>('overview');
+export default function AdminDashboard({
+  accessToken,
+  onLogout,
+  onSessionExpired,
+  initialSection = 'overview',
+  onNavigate
+}: AdminDashboardProps) {
+  const [activeSection, setActiveSection] = useState<AdminSection>(initialSection);
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -507,6 +543,7 @@ export default function AdminDashboard({ accessToken, onLogout, onSessionExpired
                 loading={loading}
                 error={error}
                 onRetry={retryDashboard}
+                onSelectSection={setActiveSection}
               />
             </>
           ) : activeSection === 'projects' ? (
@@ -530,6 +567,16 @@ export default function AdminDashboard({ accessToken, onLogout, onSessionExpired
             <AdminReferralPage
               accessToken={accessToken}
               onSessionExpired={onSessionExpired}
+            />
+          ) : activeSection === 'mentor' ? (
+            <MentorDashboard
+              embedded={true}
+              onNavigate={(route) => {
+                if (onNavigate) {
+                  onNavigate(route);
+                }
+              }}
+              onLogout={onLogout}
             />
           ) : activeSection === 'profile' ? (
             <AdminSecurityPage

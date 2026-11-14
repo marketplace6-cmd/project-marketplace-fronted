@@ -4,8 +4,7 @@ import {
   Lock, FileText, Award, HelpCircle, LogOut, Menu, X, ChevronRight,
   ChevronLeft, Upload, ExternalLink, CreditCard,
   Layers, Code2, Cpu, Smartphone, Database, Cloud, Sparkles,
-  Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2,
-  GraduationCap
+  Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2
 } from 'lucide-react';
 import {
   ProjectCategory, ProjectDTO,
@@ -23,7 +22,6 @@ import { StudentCommerceAPI, StudentOrderRecord } from './commerceService';
 import StudentCommercePanel from './StudentCommercePanel';
 import AdminDashboard from './admin/AdminDashboard';
 import StudentReferralPage from './StudentReferralPage';
-import MentorDashboard from './mentor/MentorDashboard';
 import { ReferralApiError, StudentReferralAPI } from './referralService';
 import { supabase } from '../utils/supabase/client';
 
@@ -2346,7 +2344,7 @@ export default function App() {
     </div>
   );
 
-  const renderAdminPanel = () => {
+  const renderAdminPanel = (initialSection?: any) => {
     if (!adminSession) return renderAdminLoginPage();
     if (adminSession.mustChangePassword) return renderAdminChangePasswordPage();
 
@@ -2355,6 +2353,8 @@ export default function App() {
         accessToken={adminSession.accessToken}
         onLogout={handleAdminLogout}
         onSessionExpired={handleAdminSessionExpired}
+        initialSection={initialSection || (currentRoute === 'mentor' ? 'mentor' : 'overview')}
+        onNavigate={navigate}
       />
     );
   };
@@ -2676,22 +2676,6 @@ export default function App() {
                   <span>Student ID Verification</span>
                 </button>
 
-                <button
-                  onClick={() => navigate('mentor')}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-colors text-left ${
-                    currentRoute === 'mentor'
-                      ? 'bg-indigo-50 text-indigo-600 font-bold'
-                      : 'hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <GraduationCap className="w-4 h-4 text-indigo-600" />
-                    <span className="font-semibold">Mentor Dashboard</span>
-                  </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                    Direct Deals
-                  </span>
-                </button>
               </nav>
             </div>
 
@@ -2802,15 +2786,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Quick Mentor Portal button */}
-            <button
-              onClick={() => navigate('mentor')}
-              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 transition-colors"
-              title="Switch to Mentor Dashboard"
-            >
-              <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Mentor Portal</span>
-            </button>
           </div>
 
           {/* Mobile Navigation Toggle Button */}
@@ -2849,11 +2824,7 @@ export default function App() {
         {currentRoute === 'terms' && renderLegalPage('terms')}
         {currentRoute === 'refund' && renderLegalPage('refund')}
         {currentRoute === 'admin' && renderAdminPanel()}
-        {currentRoute === 'mentor' && (
-          <MentorDashboard
-            onNavigate={navigate}
-          />
-        )}
+        {currentRoute === 'mentor' && renderAdminPanel('mentor')}
       </main>
 
       {/* G. Footer */}
@@ -2872,7 +2843,7 @@ export default function App() {
               <li><button onClick={() => navigate('verification')} className="hover:text-white">Student ID Verification</button></li>
               <li><button onClick={() => navigate('selected-projects')} className="hover:text-white">Selected Projects (Max 3)</button></li>
               <li><button onClick={() => navigate('referrals')} className="hover:text-white">Referral Program</button></li>
-              <li><button onClick={() => navigate('mentor')} className="hover:text-white flex items-center gap-1"><GraduationCap size={13} className="text-indigo-400" /> Mentor Portal</button></li>
+              <li><button onClick={() => navigate('admin-login')} className="hover:text-white flex items-center gap-1"><ShieldCheck size={13} className="text-indigo-400" /> Admin & Mentor Portal</button></li>
             </ul>
           </div>
           <div className="space-y-2">

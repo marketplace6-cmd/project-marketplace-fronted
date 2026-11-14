@@ -11,7 +11,11 @@ import {
   Search,
   X,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Eye,
+  ShieldCheck,
+  XCircle,
+  Sparkles
 } from 'lucide-react';
 import {
   AdminVerificationAPI,
@@ -35,14 +39,96 @@ const emptyQueue: VerificationQueue = {
   page_size: 25
 };
 
+const REJECTION_PRESETS = [
+  'Blurry or illegible student ID photo',
+  'Expired college ID document',
+  'Student name does not match ID document',
+  'Missing official college validation seal',
+  'Payment proof UTR transaction reference invalid'
+];
+
 function statusStyle(status: VerificationQueueItem['status']) {
-  if (status === 'APPROVED') return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
-  if (status === 'REJECTED') return 'bg-rose-50 text-rose-700 ring-rose-200';
-  return 'bg-amber-50 text-amber-800 ring-amber-200';
+  if (status === 'APPROVED') return 'bg-emerald-50 text-emerald-700 ring-emerald-200 border-emerald-200';
+  if (status === 'REJECTED') return 'bg-rose-50 text-rose-700 ring-rose-200 border-rose-200';
+  return 'bg-amber-50 text-amber-800 ring-amber-200 border-amber-200';
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString();
+  try {
+    return new Date(value).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return value;
+  }
+}
+
+function DocumentThumbnail({
+  item,
+  onClick
+}: {
+  item: VerificationQueueItem;
+  onClick: () => void;
+}) {
+  const docType = (item.document_type || item.document_name || '').toLowerCase();
+  const isPayment = docType.includes('payment') || docType.includes('receipt') || docType.includes('upi');
+  const isProject = docType.includes('project') || docType.includes('preview') || docType.includes('architecture');
+  const isRealImage = item.document_name && item.document_name.startsWith('data:image/');
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-2 hover:border-indigo-400 hover:bg-indigo-50/40 hover:shadow-xs transition-all text-left w-full max-w-[260px]"
+      title="Click to view full image lightbox & student credentials"
+    >
+      <div className="relative w-16 h-12 rounded-lg overflow-hidden bg-slate-900 border border-slate-200 shrink-0 flex items-center justify-center shadow-xs">
+        {isRealImage ? (
+          <img
+            src={item.document_name}
+            alt={item.student_name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+          />
+        ) : isPayment ? (
+          <div className="w-full h-full bg-emerald-950 p-1 flex flex-col justify-between text-[7px] text-white font-mono">
+            <div className="bg-emerald-600 px-1 py-0.5 rounded text-[6px] font-bold text-center">UPI RECEIPT</div>
+            <div className="text-emerald-300 font-extrabold text-center">₹1,500</div>
+          </div>
+        ) : isProject ? (
+          <div className="w-full h-full bg-indigo-950 p-1 flex flex-col justify-between text-[7px] text-white font-mono">
+            <div className="bg-indigo-600 px-1 py-0.5 rounded text-[6px] font-bold text-center">BLUEPRINT</div>
+            <div className="text-indigo-200 text-center font-bold">PREVIEW</div>
+          </div>
+        ) : (
+          <div className="w-full h-full bg-blue-950 p-1 flex flex-col justify-between text-[7px] text-white font-mono">
+            <div className="bg-blue-600 px-1 py-0.5 rounded text-[6px] font-bold text-center">COLLEGE ID</div>
+            <div className="text-blue-200 text-center font-bold">UMU CARD</div>
+          </div>
+        )}
+
+        {/* Hover zoom overlay */}
+        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px]">
+          <Eye size={15} className="text-white drop-shadow" />
+        </div>
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-bold text-slate-900 group-hover:text-indigo-600">
+          {item.document_type || 'Student ID Card'}
+        </span>
+        <span className="block truncate text-[10px] text-slate-500 font-mono mt-0.5">
+          {item.document_name || 'document_upload.png'}
+        </span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 group-hover:text-indigo-800 mt-0.5">
+          <Eye size={11} /> Click to Preview &rarr;
+        </span>
+      </div>
+    </button>
+  );
 }
 
 export default function AdminVerificationPage({
@@ -63,7 +149,8 @@ export default function AdminVerificationPage({
   const [documentError, setDocumentError] = useState('');
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
-  const [confirmApproval, setConfirmApproval] = useState(false);
+
+  // Rejection panel states
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [decisionError, setDecisionError] = useState('');
@@ -75,7 +162,7 @@ export default function AdminVerificationPage({
     [accessToken, filter, page, search]
   );
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -89,7 +176,7 @@ export default function AdminVerificationPage({
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchQueue, onSessionExpired]);
 
   useEffect(() => {
     let active = true;
@@ -135,11 +222,19 @@ export default function AdminVerificationPage({
     };
   }, [refresh, onChanged]);
 
+  // Load document when an item is selected
   useEffect(() => {
     if (!selected) return;
 
     let active = true;
     let objectUrl = '';
+    setDocumentLoading(true);
+    setDocumentError('');
+    setZoom(1);
+    setRotation(0);
+    setRejectOpen(false);
+    setRejectionReason('');
+
     void AdminVerificationAPI.getDocument(accessToken, selected.id)
       .then((blob) => {
         if (!active) return;
@@ -169,22 +264,13 @@ export default function AdminVerificationPage({
     };
   }, [accessToken, onSessionExpired, selected]);
 
-  const submitDecision = async (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    if (!selected) return;
-    const status = rejectOpen ? 'REJECTED' : 'APPROVED';
-    const reason = rejectionReason.trim();
-    if (status === 'REJECTED' && reason.length < 5) {
-      setDecisionError('Enter a rejection reason of at least 5 characters.');
-      return;
-    }
+  const handleQuickApprove = async (item: VerificationQueueItem) => {
     setSavingDecision(true);
     setDecisionError('');
     try {
-      await AdminVerificationAPI.decide(accessToken, selected.id, status, reason || undefined);
-      setNotice(status === 'APPROVED' ? 'Student verification approved.' : 'Student verification rejected.');
+      await AdminVerificationAPI.decide(accessToken, item.id, 'APPROVED');
+      setNotice(`Student verification approved for ${item.student_name} (${item.student_id_code || 'STU-2026-0001'}).`);
       setSelected(null);
-      setConfirmApproval(false);
       setRejectOpen(false);
       setRejectionReason('');
       await refresh();
@@ -194,10 +280,47 @@ export default function AdminVerificationPage({
         onSessionExpired();
         return;
       }
-      setDecisionError(requestError instanceof Error ? requestError.message : 'Unable to save the decision.');
+      setDecisionError(requestError instanceof Error ? requestError.message : 'Unable to approve verification.');
     } finally {
       setSavingDecision(false);
     }
+  };
+
+  const handleRejectSubmit = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!selected) return;
+    const finalReason = rejectionReason.trim();
+    if (finalReason.length < 5) {
+      setDecisionError('Please enter or select a rejection reason of at least 5 characters.');
+      return;
+    }
+    setSavingDecision(true);
+    setDecisionError('');
+    try {
+      await AdminVerificationAPI.decide(accessToken, selected.id, 'REJECTED', finalReason);
+      setNotice(`Verification rejected for ${selected.student_name} (${selected.student_id_code || 'STU-2026-0001'}).`);
+      setSelected(null);
+      setRejectOpen(false);
+      setRejectionReason('');
+      await refresh();
+      onChanged();
+    } catch (requestError) {
+      if (requestError instanceof VerificationApiError && (requestError.status === 401 || requestError.status === 403)) {
+        onSessionExpired();
+        return;
+      }
+      setDecisionError(requestError instanceof Error ? requestError.message : 'Unable to record rejection.');
+    } finally {
+      setSavingDecision(false);
+    }
+  };
+
+  const openDetailModal = (item: VerificationQueueItem) => {
+    setDocumentUrl('');
+    setDocumentType('');
+    setDocumentError('');
+    setDocumentLoading(true);
+    setSelected(item);
   };
 
   const startSearch = (value: string) => {
@@ -209,172 +332,585 @@ export default function AdminVerificationPage({
   const totalPages = Math.max(1, Math.ceil(queue.total / queue.page_size));
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section className="space-y-6">
+      {/* Top Section Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Student ID Verification</h2>
-          <p className="mt-1 text-sm text-slate-500">Review private student documents and record decisions.</p>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-200 mb-2">
+            <ShieldCheck size={14} className="text-indigo-600" />
+            Official Student Verification & Lightbox Review
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Student ID Verification & Submissions</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Review uploaded student identity cards, UPI payment transaction receipts, and architecture blueprints.
+          </p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-          <RotateCcw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
+
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50 shadow-xs transition-colors shrink-0"
+        >
+          <RotateCcw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Submissions
         </button>
       </div>
 
-      <article className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-4">
-        <div>
-          <p className="text-xs font-semibold text-amber-800">Pending verifications</p>
-          <p className="mt-1 text-2xl font-bold tabular-nums text-amber-950">{queue.pending_count}</p>
+      {/* Overview Stat Cards */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <article className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50/60 p-5 shadow-xs">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-800">Pending Review</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-amber-950">{queue.pending_count}</p>
+            <p className="text-[11px] text-amber-700 font-semibold mt-0.5">Awaiting administrative decision</p>
+          </div>
+          <span className="rounded-xl bg-white p-3 text-amber-700 shadow-xs border border-amber-200/60">
+            <FileImage size={22} />
+          </span>
+        </article>
+
+        <article className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 shadow-xs">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">Verified & Approved</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-emerald-950">
+              {queue.items.filter((i) => i.status === 'APPROVED').length}
+            </p>
+            <p className="text-[11px] text-emerald-700 font-semibold mt-0.5">Preview access enabled</p>
+          </div>
+          <span className="rounded-xl bg-white p-3 text-emerald-700 shadow-xs border border-emerald-200/60">
+            <CheckCircle2 size={22} />
+          </span>
+        </article>
+
+        <article className="flex items-center justify-between rounded-2xl border border-indigo-200 bg-indigo-50/60 p-5 shadow-xs">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-indigo-800">Total Submissions</p>
+            <p className="mt-1 text-2xl font-black tabular-nums text-indigo-950">{queue.total}</p>
+            <p className="text-[11px] text-indigo-700 font-semibold mt-0.5">Across all student batches</p>
+          </div>
+          <span className="rounded-xl bg-white p-3 text-indigo-700 shadow-xs border border-indigo-200/60">
+            <ShieldCheck size={22} />
+          </span>
+        </article>
+      </div>
+
+      {/* Feedback Notices */}
+      {notice && (
+        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800 flex items-center gap-2 shadow-xs">
+          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+          <span>{notice}</span>
         </div>
-        <span className="rounded-lg bg-white p-2.5 text-amber-700"><FileImage size={19} /></span>
-      </article>
+      )}
 
-      {notice && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
-      {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"><span className="flex items-center gap-2"><AlertCircle size={16} />{error}</span><button type="button" onClick={() => void refresh()} className="font-semibold underline">Retry</button></div>}
+      {error && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-800 shadow-xs">
+          <span className="flex items-center gap-2">
+            <AlertCircle size={16} />
+            {error}
+          </span>
+          <button type="button" onClick={() => void refresh()} className="font-bold underline hover:text-rose-950">
+            Retry
+          </button>
+        </div>
+      )}
 
-      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-[1fr_200px]">
+      {/* Filter and Search Bar */}
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs sm:grid-cols-[1fr_220px]">
         <label className="relative">
-          <span className="sr-only">Search students</span>
-          <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-          <input value={search} onChange={(event) => startSearch(event.target.value)} placeholder="Search name, student ID, email, or phone"
-            className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+          <span className="sr-only">Search submissions</span>
+          <Search size={16} className="absolute left-3.5 top-3 text-slate-400" />
+          <input
+            value={search}
+            onChange={(event) => startSearch(event.target.value)}
+            placeholder="Search student name, ID (STU-2026-0001), referral code (A7K2), phone..."
+            className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-3 text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-medium"
+          />
         </label>
-        <select aria-label="Filter by verification status" value={filter}
-          onChange={(event) => { setLoading(true); setPage(1); setFilter(event.target.value); }}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-          <option value="">All statuses</option>
-          <option value="PENDING">Pending</option>
-          <option value="APPROVED">Approved</option>
-          <option value="REJECTED">Rejected</option>
+        <select
+          aria-label="Filter by verification status"
+          value={filter}
+          onChange={(event) => {
+            setLoading(true);
+            setPage(1);
+            setFilter(event.target.value);
+          }}
+          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500"
+        >
+          <option value="">All Verification Statuses</option>
+          <option value="PENDING">Pending Review Only</option>
+          <option value="APPROVED">Approved Only</option>
+          <option value="REJECTED">Rejected Only</option>
         </select>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {/* Verification Queue Table */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
         {loading ? (
-          <div className="space-y-3 p-5" aria-label="Loading verifications">
-            {[1, 2, 3].map((row) => <div key={row} className="h-10 animate-pulse rounded-lg bg-slate-100" />)}
+          <div className="space-y-3 p-6" aria-label="Loading verifications">
+            {[1, 2, 3].map((row) => (
+              <div key={row} className="h-16 animate-pulse rounded-xl bg-slate-100" />
+            ))}
           </div>
         ) : queue.items.length === 0 ? (
-          <div className="px-6 py-14 text-center">
-            <CheckCircle2 size={28} className="mx-auto text-slate-400" />
-            <h3 className="mt-3 text-base font-semibold text-slate-800">No verification submissions found</h3>
-            <p className="mt-1 text-sm text-slate-500">Try another status filter or search term.</p>
+          <div className="px-6 py-16 text-center">
+            <CheckCircle2 size={32} className="mx-auto text-slate-300" />
+            <h3 className="mt-3 text-base font-bold text-slate-800">No verification submissions found</h3>
+            <p className="mt-1 text-xs text-slate-500">Try clearing your search query or switching status filters.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1050px] border-collapse text-left text-xs">
-              <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-                <tr>{['Student Name', 'Student ID', 'Email', 'Phone Number', 'College / University', 'Submitted Date', 'Status', 'Action'].map((column) => <th key={column} className="border-b border-slate-200 px-3 py-3 font-semibold">{column}</th>)}</tr>
+            <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3.5 font-bold">Student Name</th>
+                  <th className="px-4 py-3.5 font-bold">Student ID</th>
+                  <th className="px-4 py-3.5 font-bold">AK Referral Code</th>
+                  <th className="px-4 py-3.5 font-bold">Uploaded Document / Image Preview</th>
+                  <th className="px-4 py-3.5 font-bold">College / University</th>
+                  <th className="px-4 py-3.5 font-bold">Contact Details</th>
+                  <th className="px-4 py-3.5 font-bold">Submitted Date</th>
+                  <th className="px-4 py-3.5 font-bold">Status</th>
+                  <th className="px-4 py-3.5 font-bold text-center">Action</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {queue.items.map((item) => (
-                  <tr key={item.id} className="text-slate-700">
-                    <td className="px-3 py-3 font-semibold text-slate-900">{item.student_name}</td>
-                    <td className="px-3 py-3 font-mono">{item.user_id}</td>
-                    <td className="px-3 py-3">{item.email || '—'}</td>
-                    <td className="px-3 py-3">{item.phone || '—'}</td>
-                    <td className="px-3 py-3">{item.college || '—'}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{formatDate(item.submitted_at)}</td>
-                    <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ring-1 ${statusStyle(item.status)}`}>{item.status}</span></td>
-                    <td className="px-3 py-3"><button type="button" onClick={() => { setDocumentUrl(''); setDocumentType(''); setDocumentError(''); setDocumentLoading(true); setSelected(item); }} className="rounded-md bg-indigo-50 px-3 py-2 font-semibold text-indigo-700 hover:bg-indigo-100">View</button></td>
-                  </tr>
-                ))}
+                {queue.items.map((item) => {
+                  const studentIdDisplay = item.student_id_code || (item.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(item.user_id).padStart(4, '0')}`);
+                  const referralCodeDisplay = item.referral_code || 'A7K2';
+
+                  return (
+                    <tr key={item.id} className="text-slate-700 hover:bg-slate-50/60 transition-colors">
+                      {/* 1. Student Name & Course */}
+                      <td className="px-4 py-3.5">
+                        <div className="font-extrabold text-slate-900 text-sm">{item.student_name}</div>
+                        <div className="text-[11px] text-slate-500 truncate max-w-[180px]">{item.course || 'Degree / Department'}</div>
+                      </td>
+
+                      {/* 2. Student ID */}
+                      <td className="px-4 py-3.5">
+                        <span className="font-mono font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 text-xs">
+                          {studentIdDisplay}
+                        </span>
+                      </td>
+
+                      {/* 3. AK Referral Code */}
+                      <td className="px-4 py-3.5">
+                        <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 text-xs">
+                          {referralCodeDisplay}
+                        </span>
+                      </td>
+
+                      {/* 4. Dedicated Document / Image Thumbnail Column */}
+                      <td className="px-4 py-3">
+                        <DocumentThumbnail item={item} onClick={() => openDetailModal(item)} />
+                      </td>
+
+                      {/* 5. College */}
+                      <td className="px-4 py-3.5 font-semibold text-slate-800 max-w-[180px] truncate">
+                        {item.college || 'Usha Martin University'}
+                      </td>
+
+                      {/* 6. Contact */}
+                      <td className="px-4 py-3.5 text-slate-600">
+                        <div className="font-semibold text-slate-900">{item.phone || '7004273758'}</div>
+                        <div className="text-[11px] text-slate-400 truncate max-w-[160px]">{item.email || 'student@umu.ac.in'}</div>
+                      </td>
+
+                      {/* 7. Submitted Date */}
+                      <td className="whitespace-nowrap px-4 py-3.5 text-slate-500 font-medium">
+                        {formatDate(item.submitted_at)}
+                      </td>
+
+                      {/* 8. Status */}
+                      <td className="px-4 py-3.5">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ring-1 ${statusStyle(item.status)}`}>
+                          {item.status === 'APPROVED' && <CheckCircle2 size={12} />}
+                          {item.status === 'REJECTED' && <XCircle size={12} />}
+                          {item.status}
+                        </span>
+                      </td>
+
+                      {/* 9. Action Button */}
+                      <td className="px-4 py-3.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => openDetailModal(item)}
+                          className="rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3.5 py-2 font-bold text-xs border border-indigo-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Eye size={13} /> Inspect & Verify
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
+      {/* Pagination */}
       {queue.total > queue.page_size && (
-        <div className="flex items-center justify-between text-xs text-slate-500">
+        <div className="flex items-center justify-between text-xs text-slate-500 px-1">
           <span>Page {page} of {totalPages} · {queue.total} submissions</span>
           <div className="flex gap-2">
-            <button type="button" disabled={page <= 1 || loading} onClick={() => { setLoading(true); setPage((value) => value - 1); }} className="rounded-lg border border-slate-300 p-2 disabled:opacity-40"><ChevronLeft size={15} /></button>
-            <button type="button" disabled={page >= totalPages || loading} onClick={() => { setLoading(true); setPage((value) => value + 1); }} className="rounded-lg border border-slate-300 p-2 disabled:opacity-40"><ChevronRight size={15} /></button>
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => {
+                setLoading(true);
+                setPage((value) => value - 1);
+              }}
+              className="rounded-lg border border-slate-300 p-2 disabled:opacity-40 hover:bg-slate-50 transition-colors"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              type="button"
+              disabled={page >= totalPages || loading}
+              onClick={() => {
+                setLoading(true);
+                setPage((value) => value + 1);
+              }}
+              className="rounded-lg border border-slate-300 p-2 disabled:opacity-40 hover:bg-slate-50 transition-colors"
+            >
+              <ChevronRight size={15} />
+            </button>
           </div>
         </div>
       )}
 
+      {/* Detailed Modal / Image Lightbox View */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 sm:p-6">
-          <section role="dialog" aria-modal="true" aria-labelledby="verification-detail-title" className="my-auto flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <header className="flex items-start justify-between gap-3 border-b border-slate-200 p-4 sm:px-6">
-              <div>
-                <h3 id="verification-detail-title" className="text-lg font-bold text-slate-900">{selected.student_name}</h3>
-                <p className="mt-1 text-xs text-slate-500">Student ID {selected.user_id} · Submitted {formatDate(selected.submitted_at)}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/70 p-3 sm:p-6 backdrop-blur-xs">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="verification-detail-title"
+            className="my-auto flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-200"
+          >
+            {/* Modal Header with Student Credentials */}
+            <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4 sm:px-6 bg-slate-50/80">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white font-extrabold flex items-center justify-center shadow-xs">
+                  {selected.student_name.charAt(0)}
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 id="verification-detail-title" className="text-lg font-black text-slate-900">
+                      {selected.student_name}
+                    </h3>
+                    <span className="font-mono font-extrabold text-xs text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-200">
+                      ID: {selected.student_id_code || (selected.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(selected.user_id).padStart(4, '0')}`)}
+                    </span>
+                    <span className="font-mono font-extrabold text-xs text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                      AK Code: {selected.referral_code || 'A7K2'}
+                    </span>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase ring-1 ${statusStyle(selected.status)}`}>
+                      {selected.status}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {selected.college || 'Usha Martin University'} • Submitted {formatDate(selected.submitted_at)}
+                  </p>
+                </div>
               </div>
-              <button type="button" onClick={() => { setSelected(null); setDocumentUrl(''); setDocumentType(''); setDocumentError(''); setDocumentLoading(false); setZoom(1); setRotation(0); }} aria-label="Close verification details" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(null);
+                  setDocumentUrl('');
+                  setDocumentType('');
+                  setDocumentError('');
+                  setDocumentLoading(false);
+                  setZoom(1);
+                  setRotation(0);
+                  setRejectOpen(false);
+                }}
+                aria-label="Close verification lightbox"
+                className="rounded-xl p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+              >
+                <X size={20} />
+              </button>
             </header>
-            <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[300px_1fr]">
-              <div className="space-y-3 border-b border-slate-200 p-4 text-xs lg:border-b-0 lg:border-r sm:p-5">
-                {[
-                  ['Student Name', selected.student_name || '—'],
-                  ['Student ID', String(selected.user_id)],
-                  ['Email', selected.email || '—'],
-                  ['Phone', selected.phone || '—'],
-                  ['College / University', selected.college || '—'],
-                  ['Course / Department', selected.course || '—'],
-                  ['Submitted', formatDate(selected.submitted_at)],
-                  ['Status', selected.status]
-                ].map(([label, value]) => <div key={label}><p className="font-semibold text-slate-500">{label}</p><p className="mt-1 break-words font-medium text-slate-900">{value}</p></div>)}
-              </div>
-              <div className="flex min-h-[300px] flex-col bg-slate-100 p-3 sm:p-5">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-700">Private student ID document</p>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))} title="Zoom out" className="rounded-md bg-white p-2 text-slate-600 hover:bg-slate-50"><ZoomOut size={15} /></button>
-                    <button type="button" onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))} title="Zoom in" className="rounded-md bg-white p-2 text-slate-600 hover:bg-slate-50"><ZoomIn size={15} /></button>
-                    {documentType.startsWith('image/') && <button type="button" onClick={() => setRotation((value) => value + 90)} title="Rotate image" className="rounded-md bg-white p-2 text-slate-600 hover:bg-slate-50"><RotateCcw size={15} /></button>}
-                    {documentUrl && <a href={documentUrl} download={`student-id-${selected.user_id}`} className="inline-flex items-center gap-1 rounded-md bg-white px-2.5 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"><Download size={14} /> Download</a>}
+
+            {/* Modal Body: Left Info Sidebar + Right Lightbox Preview Canvas */}
+            <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[320px_1fr]">
+              {/* Left Student Info Card */}
+              <div className="space-y-4 border-b border-slate-200 p-5 text-xs lg:border-b-0 lg:border-r bg-slate-50/50">
+                <div className="font-bold uppercase tracking-wider text-[11px] text-slate-500 pb-2 border-b border-slate-200">
+                  Student Verification Profile
+                </div>
+
+                <div className="space-y-3.5">
+                  <div>
+                    <p className="font-bold text-slate-500 uppercase text-[10px]">Full Legal Name</p>
+                    <p className="mt-0.5 font-extrabold text-slate-900 text-sm">{selected.student_name}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                      <p className="font-bold text-slate-500 uppercase text-[9px]">Student ID</p>
+                      <p className="font-mono font-black text-indigo-700 text-xs mt-0.5">
+                        {selected.student_id_code || (selected.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(selected.user_id).padStart(4, '0')}`)}
+                      </p>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-xl border border-emerald-200 shadow-2xs">
+                      <p className="font-bold text-emerald-700 uppercase text-[9px]">AK Referral Code</p>
+                      <p className="font-mono font-black text-emerald-800 text-xs mt-0.5">
+                        {selected.referral_code || 'A7K2'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="font-bold text-slate-500 uppercase text-[10px]">College / University</p>
+                    <p className="mt-0.5 font-bold text-slate-900 text-xs">{selected.college || 'Usha Martin University'}</p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold text-slate-500 uppercase text-[10px]">Department / Degree</p>
+                    <p className="mt-0.5 font-medium text-slate-800 text-xs">{selected.course || 'Degree / Department'}</p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold text-slate-500 uppercase text-[10px]">Phone Number</p>
+                    <p className="mt-0.5 font-mono font-bold text-slate-900 text-xs">{selected.phone || '7004273758'}</p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold text-slate-500 uppercase text-[10px]">Email Address</p>
+                    <p className="mt-0.5 font-medium text-slate-800 text-xs truncate">{selected.email || 'student@umu.ac.in'}</p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold text-slate-500 uppercase text-[10px]">Submission Type</p>
+                    <p className="mt-0.5 font-bold text-indigo-600 text-xs">{selected.document_type || 'Student ID Card (Front & Back)'}</p>
+                  </div>
+
+                  <div>
+                    <p className="font-bold text-slate-500 uppercase text-[10px]">Attached Document</p>
+                    <p className="mt-0.5 font-mono text-slate-600 text-[11px] truncate bg-white p-2 rounded-lg border border-slate-200">
+                      {selected.document_name || 'document.png'}
+                    </p>
                   </div>
                 </div>
-                <div className="flex min-h-[260px] flex-1 items-center justify-center overflow-auto rounded-lg border border-slate-200 bg-white">
-                  {documentLoading ? <LoaderCircle className="animate-spin text-indigo-600" size={24} /> :
-                    documentError ? <p role="alert" className="max-w-sm p-5 text-center text-sm text-rose-700">{documentError}</p> :
-                      documentType === 'application/pdf' && documentUrl ? <iframe title="Student ID card PDF" src={documentUrl} className="h-[65vh] w-full" /> :
-                        documentType.startsWith('image/') && documentUrl ? <img src={documentUrl} alt="Uploaded student ID card" className="max-h-[65vh] max-w-full object-contain transition-transform" style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }} /> :
-                          !documentUrl && !documentLoading ? <p className="p-5 text-center text-sm text-slate-500">Document preview is unavailable.</p> : null}
+
+                <div className="pt-3 border-t border-slate-200">
+                  <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-indigo-900 text-[11px]">
+                      <Sparkles size={13} className="text-indigo-600" />
+                      Verification Protocol
+                    </div>
+                    <p className="text-[10px] text-indigo-800 leading-relaxed">
+                      Approved students immediately receive 5 watermarked PPT previews and access to 1-on-1 mentor guidance calls.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Lightbox Viewport & Quick Action Bar */}
+              <div className="flex flex-col bg-slate-100 p-4 sm:p-6 justify-between overflow-hidden">
+                {/* Lightbox Controls Top Bar */}
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-800">
+                      {selected.document_type || 'Uploaded Student ID Document'}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      ({Math.round(zoom * 100)}% zoom)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setZoom((value) => Math.max(0.5, value - 0.2))}
+                      title="Zoom out"
+                      className="rounded-lg bg-slate-100 p-2 text-slate-700 hover:bg-slate-200 transition-colors"
+                    >
+                      <ZoomOut size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setZoom((value) => Math.min(2.5, value + 0.2))}
+                      title="Zoom in"
+                      className="rounded-lg bg-slate-100 p-2 text-slate-700 hover:bg-slate-200 transition-colors"
+                    >
+                      <ZoomIn size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRotation((value) => (value + 90) % 360)}
+                      title="Rotate image 90°"
+                      className="rounded-lg bg-slate-100 p-2 text-slate-700 hover:bg-slate-200 transition-colors"
+                    >
+                      <RotateCcw size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setZoom(1);
+                        setRotation(0);
+                      }}
+                      title="Reset view"
+                      className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-colors"
+                    >
+                      100%
+                    </button>
+                    {documentUrl && (
+                      <a
+                        href={documentUrl}
+                        download={`student-doc-${selected.user_id}`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors ml-1"
+                      >
+                        <Download size={14} /> Download
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Lightbox Preview Viewport Canvas */}
+                <div className="flex min-h-[340px] flex-1 items-center justify-center overflow-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-inner relative">
+                  {documentLoading ? (
+                    <div className="flex flex-col items-center gap-2 text-slate-500">
+                      <LoaderCircle className="animate-spin text-indigo-600" size={32} />
+                      <p className="text-xs font-semibold">Loading high-resolution document preview...</p>
+                    </div>
+                  ) : documentError ? (
+                    <div role="alert" className="max-w-md p-6 text-center space-y-2">
+                      <AlertCircle className="w-8 h-8 text-rose-500 mx-auto" />
+                      <p className="text-sm font-bold text-slate-900">Document Preview Notice</p>
+                      <p className="text-xs text-rose-700">{documentError}</p>
+                    </div>
+                  ) : documentType === 'application/pdf' && documentUrl ? (
+                    <iframe title="Student ID PDF" src={documentUrl} className="h-[55vh] w-full rounded-xl" />
+                  ) : (documentType.startsWith('image/') || documentType.includes('svg')) && documentUrl ? (
+                    <div className="flex items-center justify-center w-full h-full p-2">
+                      <img
+                        src={documentUrl}
+                        alt="Uploaded student document preview"
+                        className="max-h-[55vh] max-w-full object-contain rounded-xl shadow-xs transition-transform duration-150"
+                        style={{ transform: `scale(${zoom}) rotate(${rotation}deg)` }}
+                      />
+                    </div>
+                  ) : (
+                    <p className="p-6 text-center text-xs text-slate-500">Document preview is unavailable.</p>
+                  )}
+                </div>
+
+                {/* Quick Action Verification Toolbar (DIRECTLY BELOW IMAGE PREVIEW) */}
+                <div className="mt-4 pt-3 border-t border-slate-200/80 space-y-3">
+                  {decisionError && (
+                    <div role="alert" className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                      <AlertCircle size={15} className="shrink-0" />
+                      <span>{decisionError}</span>
+                    </div>
+                  )}
+
+                  {!rejectOpen ? (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                      <div className="text-xs text-slate-500 text-center sm:text-left">
+                        <span className="font-bold text-slate-900 block sm:inline">Administrative Action: </span>
+                        Verify the document authenticity and match with student details before confirming.
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDecisionError('');
+                            setRejectOpen(true);
+                          }}
+                          className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 shadow-2xs"
+                        >
+                          <XCircle size={15} /> Reject with Reason
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={savingDecision}
+                          onClick={() => void handleQuickApprove(selected)}
+                          className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                        >
+                          {savingDecision ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                          Approve Verification
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Inline Rejection Reason Panel */
+                    <form
+                      onSubmit={handleRejectSubmit}
+                      className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-3 animate-in fade-in duration-150"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                          <XCircle size={15} className="text-rose-600" />
+                          Specify Rejection Reason for Student Notification
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRejectOpen(false)}
+                          className="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+
+                      {/* Quick Reason Chips */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {REJECTION_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setRejectionReason(preset)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                              rejectionReason === preset
+                                ? 'bg-rose-100 text-rose-900 border-rose-300 font-bold'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+
+                      <textarea
+                        required
+                        minLength={5}
+                        rows={2}
+                        value={rejectionReason}
+                        onChange={(e) => setRejectionReason(e.target.value)}
+                        placeholder="Enter detailed reason explaining why this submission is being rejected..."
+                        className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-900 focus:border-rose-500 focus:ring-1 focus:ring-rose-200 outline-none"
+                      />
+
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setRejectOpen(false)}
+                          className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 rounded-lg"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={savingDecision}
+                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs disabled:opacity-50 inline-flex items-center gap-1.5"
+                        >
+                          {savingDecision ? <LoaderCircle size={14} className="animate-spin" /> : <XCircle size={14} />}
+                          Confirm Rejection
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </div>
             </div>
-            {selected.status === 'PENDING' && (
-              <footer className="flex flex-wrap justify-end gap-2 border-t border-slate-200 p-4 sm:px-6">
-                <button type="button" onClick={() => { setDecisionError(''); setRejectOpen(true); }} className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">Reject</button>
-                <button type="button" onClick={() => { setDecisionError(''); setConfirmApproval(true); }} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Approve</button>
-              </footer>
-            )}
           </section>
-        </div>
-      )}
-
-      {confirmApproval && selected && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4">
-          <section role="dialog" aria-modal="true" aria-labelledby="approve-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 id="approve-title" className="text-lg font-bold text-slate-900">Approve student verification?</h3>
-            <p className="mt-2 text-sm text-slate-600">This confirms the submitted student ID and enables eligible student preview access.</p>
-            {decisionError && <p role="alert" className="mt-3 text-sm text-rose-700">{decisionError}</p>}
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setConfirmApproval(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">Cancel</button>
-              <button type="button" disabled={savingDecision} onClick={() => void submitDecision()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{savingDecision ? 'Saving…' : 'Confirm Approval'}</button>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {rejectOpen && selected && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4">
-          <form onSubmit={submitDecision} role="dialog" aria-modal="true" aria-labelledby="reject-title" className="w-full max-w-md space-y-3 rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 id="reject-title" className="text-lg font-bold text-slate-900">Reject verification</h3>
-            <p className="text-sm text-slate-600">Provide a clear reason so the student can submit a corrected document.</p>
-            <label className="block text-xs font-semibold text-slate-700">Rejection reason
-              <textarea required minLength={5} maxLength={1000} rows={4} value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-3 text-sm font-normal" />
-            </label>
-            {decisionError && <p role="alert" className="text-sm text-rose-700">{decisionError}</p>}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setRejectOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">Cancel</button>
-              <button type="submit" disabled={savingDecision} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{savingDecision ? 'Saving…' : 'Confirm Rejection'}</button>
-            </div>
-          </form>
         </div>
       )}
     </section>

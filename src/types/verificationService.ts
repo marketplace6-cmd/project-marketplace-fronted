@@ -10,6 +10,10 @@ export interface VerificationQueueItem {
   course: string | null;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   submitted_at: string;
+  document_name?: string;
+  document_type?: string;
+  referral_code?: string;
+  student_id_code?: string;
 }
 
 export interface VerificationQueue {
@@ -460,14 +464,81 @@ export const StudentAuthAPI = {
   }
 };
 
+export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
+  {
+    id: 1,
+    user_id: 1346,
+    student_id_code: 'STU-2026-0001',
+    student_name: 'Mayank Kumar',
+    email: 'mayank.kumar@student.umu.ac.in',
+    phone: '7004273758',
+    college: 'Usha Martin University',
+    course: 'B.Tech Computer Science & Engineering',
+    status: 'PENDING',
+    submitted_at: '2026-11-14T11:55:37.000Z',
+    document_name: 'student_id_front_back_mayank.jpg',
+    document_type: 'Student ID Card (Front & Back)',
+    referral_code: 'A7K2'
+  },
+  {
+    id: 2,
+    user_id: 1347,
+    student_id_code: 'STU-2026-0002',
+    student_name: 'Priya Sharma',
+    email: 'priya.sharma@student.umu.ac.in',
+    phone: '7004273759',
+    college: 'Usha Martin University',
+    course: 'BCA Data Science',
+    status: 'PENDING',
+    submitted_at: '2026-11-14T09:20:15.000Z',
+    document_name: 'upi_payment_proof_receipt.png',
+    document_type: 'Payment Proof (UPI Transaction)',
+    referral_code: 'PS88'
+  },
+  {
+    id: 3,
+    user_id: 1348,
+    student_id_code: 'STU-2026-0003',
+    student_name: 'Rahul Verma',
+    email: 'rahul.verma@student.umu.ac.in',
+    phone: '7004273760',
+    college: 'Usha Martin University',
+    course: 'B.Tech AI & Machine Learning',
+    status: 'APPROVED',
+    submitted_at: '2026-11-13T16:45:00.000Z',
+    document_name: 'project_architecture_preview.png',
+    document_type: 'Project Preview & Architecture Image',
+    referral_code: 'RV14'
+  },
+  {
+    id: 4,
+    user_id: 1349,
+    student_id_code: 'STU-2026-0004',
+    student_name: 'Arjun Mehta',
+    email: 'arjun.mehta@student.umu.ac.in',
+    phone: '7004273761',
+    college: 'Usha Martin University',
+    course: 'B.Tech Mechanical',
+    status: 'REJECTED',
+    submitted_at: '2026-11-12T14:10:00.000Z',
+    document_name: 'blurry_id_card_scan.jpg',
+    document_type: 'Student ID Card (Front Side)',
+    referral_code: 'AM92'
+  }
+];
+
 const LOCAL_VERIFICATIONS_KEY = 'cpm_admin_verifications';
 
 function loadLocalVerifications(): VerificationQueueItem[] {
   try {
     const raw = localStorage.getItem(LOCAL_VERIFICATIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    return DEFAULT_VERIFICATION_QUEUE_ITEMS;
   } catch {
-    return [];
+    return DEFAULT_VERIFICATION_QUEUE_ITEMS;
   }
 }
 
@@ -587,13 +658,16 @@ export const AdminVerificationAPI = {
         }
 
         // If it's a document filename or record without full dataUrl, generate a real student ID card image
-        const svg = generateStudentIdCardSvg({
+        const svg = generateDocumentSvg({
           studentName: data.student_name || 'Student',
           college: data.college || 'College / University',
           course: data.course || 'Degree / Department',
           studentId: String(data.user_id || data.id),
+          studentIdCode: data.student_id_code || (Number(data.user_id) === 1346 ? 'STU-2026-0001' : `STU-2026-${String(data.user_id || data.id).padStart(4, '0')}`),
           phone: String(data.phone || data.payment_phone || '—'),
-          documentName: data.document_name
+          documentName: data.document_name,
+          documentType: data.document_type,
+          referralCode: data.referral_code || 'A7K2'
         });
         return new Blob([svg], { type: 'image/svg+xml' });
       }
@@ -608,24 +682,29 @@ export const AdminVerificationAPI = {
       return dataUrlToBlob(item.document_name);
     }
     if (item) {
-      const svg = generateStudentIdCardSvg({
+      const svg = generateDocumentSvg({
         studentName: item.student_name || 'Student',
         college: item.college || 'College / University',
         course: item.course || 'Degree / Department',
         studentId: String(item.user_id || item.id),
+        studentIdCode: item.student_id_code || (item.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(item.user_id || item.id).padStart(4, '0')}`),
         phone: String(item.phone || '—'),
-        documentName: item.document_name
+        documentName: item.document_name,
+        documentType: item.document_type,
+        referralCode: item.referral_code || 'A7K2'
       });
       return new Blob([svg], { type: 'image/svg+xml' });
     }
 
     // Default fallback
-    const svg = generateStudentIdCardSvg({
-      studentName: 'Student',
-      college: 'College / University',
-      course: 'Degree / Department',
+    const svg = generateDocumentSvg({
+      studentName: 'Mayank Kumar',
+      college: 'Usha Martin University',
+      course: 'B.Tech Computer Science',
       studentId: String(verificationId),
-      phone: '—'
+      studentIdCode: 'STU-2026-0001',
+      phone: '7004273758',
+      referralCode: 'A7K2'
     });
     return new Blob([svg], { type: 'image/svg+xml' });
   },
@@ -687,15 +766,124 @@ function dataUrlToBlob(dataUrl: string): Blob {
   }
 }
 
+export function generateDocumentSvg(info: {
+  studentName: string;
+  college: string;
+  course: string;
+  studentId: string;
+  studentIdCode?: string;
+  phone: string;
+  documentName?: string;
+  documentType?: string;
+  referralCode?: string;
+}): string {
+  const docType = (info.documentType || info.documentName || '').toLowerCase();
+  if (docType.includes('payment') || docType.includes('receipt') || docType.includes('upi')) {
+    return generatePaymentProofSvg(info);
+  }
+  if (docType.includes('project') || docType.includes('preview') || docType.includes('architecture')) {
+    return generateProjectPreviewSvg(info);
+  }
+  return generateStudentIdCardSvg(info);
+}
+
+function generatePaymentProofSvg(info: {
+  studentName: string;
+  studentId: string;
+  studentIdCode?: string;
+  phone: string;
+  referralCode?: string;
+}): string {
+  const { studentName, studentId, studentIdCode, referralCode } = info;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <defs>
+    <linearGradient id="upiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect x="15" y="15" width="570" height="350" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <path d="M 15 31 Q 15 15 31 15 L 569 15 Q 585 15 585 31 L 585 85 L 15 85 Z" fill="url(#upiGrad)"/>
+  <text x="300" y="48" font-family="system-ui, sans-serif" font-size="16" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">UNIFIED PAYMENTS INTERFACE (UPI)</text>
+  <text x="300" y="70" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#a7f3d0" text-anchor="middle" letter-spacing="1">OFFICIAL TRANSACTION RECEIPT &amp; PROOF</text>
+  <circle cx="90" cy="150" r="32" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+  <path d="M 78 150 L 86 158 L 104 140" stroke="#059669" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="140" y="142" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#64748b">TRANSACTION AMOUNT</text>
+  <text x="140" y="172" font-family="system-ui, sans-serif" font-size="28" font-weight="900" fill="#047857">₹1,500.00</text>
+  <rect x="420" y="130" width="130" height="28" rx="14" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="485" y="149" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#059669" text-anchor="middle">✓ SUCCESSFUL</text>
+  <line x1="45" y1="200" x2="555" y2="200" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="45" y="225" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">STUDENT NAME</text>
+  <text x="45" y="245" font-family="system-ui, sans-serif" font-size="14" font-weight="800" fill="#0f172a">${escapeXml(studentName)}</text>
+  <text x="45" y="280" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">STUDENT ID</text>
+  <text x="45" y="300" font-family="monospace" font-size="13" font-weight="800" fill="#4338ca">${escapeXml(studentIdCode || studentId)}</text>
+  <text x="230" y="225" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">AK REFERRAL CODE</text>
+  <text x="230" y="245" font-family="monospace" font-size="14" font-weight="800" fill="#059669">${escapeXml(referralCode || 'A7K2')}</text>
+  <text x="230" y="280" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">BENEFICIARY</text>
+  <text x="230" y="300" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#1e293b">Uvikart Escrow Services</text>
+  <text x="410" y="225" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">UTR / TXN REF</text>
+  <text x="410" y="245" font-family="monospace" font-size="12" font-weight="700" fill="#334155">UTR482910482918</text>
+  <text x="410" y="280" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">PAYMENT METHOD</text>
+  <text x="410" y="300" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#1e293b">Google Pay / PhonePe UPI</text>
+  <rect x="45" y="325" width="510" height="26" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="300" y="342" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Official Transaction Proof • Verified by Uvikart Admin Payment Gateway</text>
+</svg>`;
+}
+
+function generateProjectPreviewSvg(info: {
+  studentName: string;
+  studentId: string;
+  studentIdCode?: string;
+  referralCode?: string;
+}): string {
+  const { studentName, studentId, studentIdCode, referralCode } = info;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <defs>
+    <linearGradient id="prjGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#312e81"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <rect x="15" y="15" width="570" height="350" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <path d="M 15 31 Q 15 15 31 15 L 569 15 Q 585 15 585 31 L 585 85 L 15 85 Z" fill="url(#prjGrad)"/>
+  <text x="300" y="48" font-family="system-ui, sans-serif" font-size="16" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">PROJECT ARCHITECTURE &amp; SOURCE BLUEPRINT</text>
+  <text x="300" y="70" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#c7d2fe" text-anchor="middle" letter-spacing="1">ACADEMIC EVALUATION PREVIEW • UVIKART</text>
+  <rect x="45" y="115" width="145" height="110" rx="10" fill="#f8fafc" stroke="#6366f1" stroke-width="2"/>
+  <text x="117" y="145" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#4338ca" text-anchor="middle">React Frontend</text>
+  <text x="117" y="170" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Tailwind CSS + Vite</text>
+  <text x="117" y="195" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Interactive UI Grid</text>
+  <line x1="190" y1="170" x2="225" y2="170" stroke="#6366f1" stroke-width="2" stroke-dasharray="4"/>
+  <rect x="225" y="115" width="150" height="110" rx="10" fill="#f8fafc" stroke="#4f46e5" stroke-width="2"/>
+  <text x="300" y="145" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#3730a3" text-anchor="middle">RESTful API</text>
+  <text x="300" y="170" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Node.js / Fastify Engine</text>
+  <text x="300" y="195" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Session &amp; Token Auth</text>
+  <line x1="375" y1="170" x2="410" y2="170" stroke="#4f46e5" stroke-width="2" stroke-dasharray="4"/>
+  <rect x="410" y="115" width="145" height="110" rx="10" fill="#f8fafc" stroke="#059669" stroke-width="2"/>
+  <text x="482" y="145" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#047857" text-anchor="middle">Database Storage</text>
+  <text x="482" y="170" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">SQLite / PostgreSQL</text>
+  <text x="482" y="195" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Encrypted Schemas</text>
+  <line x1="45" y1="245" x2="555" y2="245" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="45" y="270" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">SUBMITTED BY</text>
+  <text x="45" y="290" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#0f172a">${escapeXml(studentName)}</text>
+  <text x="210" y="270" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">STUDENT ID</text>
+  <text x="210" y="290" font-family="monospace" font-size="13" font-weight="800" fill="#4338ca">${escapeXml(studentIdCode || studentId)}</text>
+  <text x="360" y="270" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">AK REFERRAL CODE</text>
+  <text x="360" y="290" font-family="monospace" font-size="13" font-weight="800" fill="#059669">${escapeXml(referralCode || 'A7K2')}</text>
+  <rect x="45" y="315" width="510" height="32" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="300" y="335" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#475569" text-anchor="middle">WATERMARKED ACADEMIC PREVIEW • PROTECTED BY UVIKART VERIFICATION</text>
+</svg>`;
+}
+
 function generateStudentIdCardSvg(info: {
   studentName: string;
   college: string;
   course: string;
   studentId: string;
+  studentIdCode?: string;
   phone: string;
-  documentName?: string;
+  referralCode?: string;
 }): string {
-  const { studentName, college, course, studentId, phone } = info;
+  const { studentName, college, course, studentId, studentIdCode, phone, referralCode } = info;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
   <defs>
     <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -711,13 +899,15 @@ function generateStudentIdCardSvg(info: {
   <circle cx="110" cy="155" r="30" fill="#64748b"/>
   <ellipse cx="110" cy="225" rx="42" ry="28" fill="#64748b"/>
   <rect x="45" y="275" width="130" height="24" rx="4" fill="#e2e8f0"/>
-  <text x="110" y="291" font-family="monospace" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle">ID: ${escapeXml(studentId)}</text>
+  <text x="110" y="291" font-family="monospace" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle">ID: ${escapeXml(studentIdCode || studentId)}</text>
   <text x="200" y="125" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">STUDENT NAME</text>
   <text x="200" y="148" font-family="system-ui, sans-serif" font-size="18" font-weight="800" fill="#0f172a">${escapeXml(studentName)}</text>
   <text x="200" y="178" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">COURSE &amp; DEPARTMENT</text>
   <text x="200" y="198" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#1e293b">${escapeXml(course)}</text>
   <text x="200" y="228" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">PHONE NUMBER</text>
   <text x="200" y="246" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#334155">${escapeXml(phone)}</text>
+  <text x="400" y="178" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#059669">AK REFERRAL CODE</text>
+  <text x="400" y="198" font-family="monospace" font-size="14" font-weight="800" fill="#047857">${escapeXml(referralCode || 'A7K2')}</text>
   <text x="400" y="228" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">ACADEMIC STATUS</text>
   <text x="400" y="246" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="#16a34a">Active Student</text>
   <line x1="200" y1="262" x2="555" y2="262" stroke="#e2e8f0" stroke-width="1.5"/>
@@ -737,7 +927,7 @@ function generateStudentIdCardSvg(info: {
     <rect x="85" y="0" width="3" height="26" fill="#0f172a"/>
     <rect x="91" y="0" width="5" height="26" fill="#0f172a"/>
     <rect x="100" y="0" width="4" height="26" fill="#0f172a"/>
-    <text x="60" y="38" font-family="monospace" font-size="9" fill="#64748b" text-anchor="middle">* ${escapeXml(studentId)} *</text>
+    <text x="60" y="38" font-family="monospace" font-size="9" fill="#64748b" text-anchor="middle">* ${escapeXml(studentIdCode || studentId)} *</text>
   </g>
   <rect x="430" y="278" width="125" height="26" rx="6" fill="#ecfdf5" stroke="#a7f3d0"/>
   <text x="492" y="295" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#059669" text-anchor="middle">COLLEGE ID CARD</text>

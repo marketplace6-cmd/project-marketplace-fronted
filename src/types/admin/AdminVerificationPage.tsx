@@ -50,6 +50,7 @@ const REJECTION_PRESETS = [
 
 function statusStyle(status: VerificationQueueItem['status']) {
   if (status === 'APPROVED') return 'bg-emerald-50 text-emerald-700 ring-emerald-200 border-emerald-200';
+  if (status === 'BLOCKED') return 'bg-purple-50 text-purple-700 ring-purple-200 border-purple-200';
   if (status === 'REJECTED') return 'bg-rose-50 text-rose-700 ring-rose-200 border-rose-200';
   return 'bg-amber-50 text-amber-800 ring-amber-200 border-amber-200';
 }
@@ -623,8 +624,9 @@ export default function AdminVerificationPage({
                       <td className="px-4 py-3.5">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ring-1 ${statusStyle(item.status)}`}>
                           {item.status === 'APPROVED' && <CheckCircle2 size={12} />}
+                          {item.status === 'BLOCKED' && <XCircle size={12} className="text-purple-600" />}
                           {item.status === 'REJECTED' && <XCircle size={12} />}
-                          {item.status}
+                          {item.status === 'BLOCKED' ? 'BLOCKED (2/2)' : item.status === 'REJECTED' ? `REJECTED (${item.rejection_count || 1}/2)` : item.status}
                         </span>
                       </td>
 
@@ -705,8 +707,13 @@ export default function AdminVerificationPage({
                       AK Code: {selected.referral_code || 'A7K2'}
                     </span>
                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase ring-1 ${statusStyle(selected.status)}`}>
-                      {selected.status}
+                      {selected.status === 'BLOCKED' ? 'BLOCKED (2/2)' : selected.status === 'REJECTED' ? `REJECTED (${selected.rejection_count || 1}/2)` : selected.status}
                     </span>
+                    {(selected.rejection_count || 0) > 0 && (
+                      <span className="font-mono font-bold text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                        {selected.rejection_count} / 2 Rejections
+                      </span>
+                    )}
                   </div>
                   <p className="mt-0.5 text-xs text-slate-500">
                     {selected.college || 'Usha Martin University'} • Submitted {formatDate(selected.submitted_at)}
@@ -988,7 +995,7 @@ export default function AdminVerificationPage({
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-rose-900 flex items-center gap-1.5">
                           <XCircle size={15} className="text-rose-600" />
-                          Specify Rejection Reason for Student Notification
+                          Specify Rejection Reason (Attempt {(selected.rejection_count || 0) + 1} of 2)
                         </span>
                         <button
                           type="button"
@@ -997,6 +1004,16 @@ export default function AdminVerificationPage({
                         >
                           Cancel
                         </button>
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                        (selected.rejection_count || 0) + 1 >= 2
+                          ? 'bg-rose-100 text-rose-950 border border-rose-300'
+                          : 'bg-amber-100 text-amber-950 border border-amber-300'
+                      }`}>
+                        {(selected.rejection_count || 0) + 1 >= 2
+                          ? '⚠️ Critical: This is the 2nd rejection. Submitting will permanently BLOCK this student account from further verification.'
+                          : 'ℹ️ Notice: This is the 1st rejection. The student will have 1 re-upload attempt remaining before restriction.'}
                       </div>
 
                       {/* Quick Reason Chips */}

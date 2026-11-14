@@ -4,7 +4,8 @@ import {
   Lock, FileText, Award, HelpCircle, LogOut, Menu, X, ChevronRight,
   ChevronLeft, Upload, ExternalLink, CreditCard,
   Layers, Code2, Cpu, Smartphone, Database, Cloud, Sparkles,
-  Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2, RefreshCw
+  Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2, RefreshCw,
+  AlertCircle, AlertTriangle
 } from 'lucide-react';
 import {
   ProjectCategory, ProjectDTO,
@@ -73,7 +74,7 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.accessToken && parsed.authState && parsed.authState !== 'logged_out' && parsed.email) {
+        if (parsed && parsed.authState && parsed.authState !== 'logged_out' && (parsed.email || parsed.id)) {
           return parsed;
         }
       } catch { /* fallback */ }
@@ -83,9 +84,62 @@ export default function App() {
 
   useEffect(() => {
     const persistedStudent = { ...student };
-    delete persistedStudent.accessToken;
     localStorage.setItem('cpm_student_session', JSON.stringify(persistedStudent));
   }, [student]);
+
+  // Synchronize student verification lifecycle with Supabase in real-time
+  useEffect(() => {
+    if (student.authState === 'logged_out') return;
+    const syncStatus = async () => {
+      try {
+        const studentId = student.id || 'STU-2026-0001';
+        const email = student.email || '';
+        const { data, error } = await supabase
+          .from('verifications')
+          .select('*')
+          .or(`user_id.eq.${studentId},email.eq.${email},id.eq.${studentId}`)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          const row = data[0];
+          const rejCount = Number(row.rejection_count || 0);
+          if (row.status === 'APPROVED' || row.status === 'VERIFIED') {
+            setStudent((prev) => (prev.authState === 'verified' ? prev : {
+              ...prev,
+              authState: 'verified',
+              rejectionCount: 0,
+              rejectionReason: undefined
+            }));
+          } else if (row.status === 'BLOCKED' || rejCount >= 2) {
+            setStudent((prev) => (prev.authState === 'verification_blocked' && prev.rejectionCount === rejCount ? prev : {
+              ...prev,
+              authState: 'verification_blocked',
+              rejectionCount: rejCount >= 2 ? rejCount : 2,
+              rejectionReason: row.rejection_reason || undefined
+            }));
+          } else if (row.status === 'REJECTED') {
+            setStudent((prev) => (prev.authState === 'verification_rejected' && prev.rejectionCount === rejCount ? prev : {
+              ...prev,
+              authState: 'verification_rejected',
+              rejectionCount: rejCount || 1,
+              rejectionReason: row.rejection_reason || undefined
+            }));
+          } else if (row.status === 'PENDING') {
+            setStudent((prev) => (prev.authState === 'verification_pending' ? prev : {
+              ...prev,
+              authState: 'verification_pending',
+              rejectionCount: rejCount,
+              rejectionReason: undefined
+            }));
+          }
+        }
+      } catch {
+        /* fallback to existing session */
+      }
+    };
+    void syncStatus();
+  }, [student.authState, student.email, student.id]);
 
   const [projects, setProjects] = useState<ProjectDTO[]>(useMockCatalogue ? INITIAL_PROJECTS : []);
   const [catalogueLoading, setCatalogueLoading] = useState(!useMockCatalogue);
@@ -199,6 +253,10 @@ export default function App() {
   };
 
   const handleSubmitStudentVerification = async () => {
+    if (student.authState === 'verification_blocked' || (student.rejectionCount || 0) >= 2) {
+      showToast('Account is permanently restricted from further verification submissions (maximum 2 attempts reached).', 'error');
+      return;
+    }
     if (!idCardFrontFile) {
       showToast('Please select at least the ID Card (Front Side) image.', 'error');
       return;
@@ -635,10 +693,6 @@ export default function App() {
     }
     if (!project.previewEligible) {
       showToast('A presentation preview is not available for this project.', 'error');
-      return;
-    }
-    if (!useMockCatalogue) {
-      showToast('Secure preview requires an authenticated backend student session.', 'error');
       return;
     }
     if (student.authState === 'logged_out') {
@@ -1386,16 +1440,37 @@ export default function App() {
   };
 
   const renderPptPreviewPage = () => {
-    if (!useMockCatalogue) {
+    if (student.authState !== 'verified') {
       return (
         <div className="mx-auto max-w-3xl px-4 py-16 text-center">
           <Lock className="mx-auto h-10 w-10 text-slate-400" />
-          <h1 className="mt-4 text-xl font-bold text-slate-900">Secure preview unavailable</h1>
-          <p className="mt-2 text-sm text-slate-600">A backend-authenticated student session is required to open protected presentations.</p>
+          <h1 className="mt-4 text-xl font-bold text-slate-900">Protected Presentation Preview Locked</h1>
+          <p className="mt-2 text-sm text-slate-600">Only verified students can view protected project presentations. Please complete your student ID verification.</p>
         </div>
       );
     }
-    const slides = activeProject.pptSlides;
+    const slides = activeProject?.pptSlides?.length ? activeProject.pptSlides : [
+      {
+        slideNumber: 1,
+        title: activeProject?.title || 'Project Presentation Overview',
+        bulletPoints: [
+          'Comprehensive System Architecture & Implementation',
+          'Production-grade Source Code and Deliverables Included',
+          'Academic Verification Approved by Uvikart'
+        ],
+        diagramType: 'Architecture Overview'
+      },
+      {
+        slideNumber: 2,
+        title: 'Core Objectives & Scope',
+        bulletPoints: [
+          activeProject?.problemStatement || 'Problem Statement Overview',
+          activeProject?.shortDescription || 'Key Functional Deliverables',
+          'IEEE Standard Report & Presentation Ready'
+        ],
+        diagramType: 'Functional Workflow'
+      }
+    ];
     const currentSlide = slides[currentSlideIndex] || slides[0];
 
     return (
@@ -2143,10 +2218,32 @@ export default function App() {
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                   <div className="text-xs font-semibold text-slate-500">Verification Status</div>
                   <div className="mt-1">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      Verified Student
-                    </span>
+                    {student.authState === 'verified' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        Verified Student
+                      </span>
+                    ) : student.authState === 'verification_blocked' || (student.rejectionCount || 0) >= 2 ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                        Account Restricted
+                      </span>
+                    ) : student.authState === 'verification_rejected' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                        Rejected ({2 - (student.rejectionCount || 1)} Left)
+                      </span>
+                    ) : student.authState === 'verification_pending' ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                        Pending Review
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                        Unverified
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -2177,13 +2274,106 @@ export default function App() {
                 </button>
               </div>
 
-              {/* MODIFIED: Upload ID Card Front & Back Panel */}
-              {student.authState !== 'verified' && (
+              {/* Student Verification Lifecycle: Approved / Blocked / Rejection Warning & Form */}
+              {student.authState === 'verified' ? (
+                /* 1. Approved State Banner: Form completely hidden, PPT previews unlocked */
+                <div className="mt-6 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-2 border-emerald-300 rounded-3xl p-6 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shrink-0 shadow-md">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-lg font-extrabold text-emerald-950">Student ID Verification Approved</h3>
+                          <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-extrabold bg-emerald-200 text-emerald-900 border border-emerald-300">
+                            <CheckCircle2 size={12} className="text-emerald-700" /> Verified Student
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-800 mt-1 max-w-xl leading-relaxed">
+                          Your student credentials (<strong>{studentId}</strong>) have been officially approved by Uvikart administrators. Full academic privileges, all protected project presentation (PPT) previews, and deliverables are unlocked.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => navigate('explore')}
+                      className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-2"
+                    >
+                      <Eye className="w-4 h-4" /> Explore Unlocked PPTs &rarr;
+                    </button>
+                  </div>
+                </div>
+              ) : student.authState === 'verification_blocked' || (student.rejectionCount || 0) >= 2 ? (
+                /* 2. Permanent Account Block Notice: Form completely hidden */
+                <div className="mt-6 bg-rose-50 border-2 border-rose-300 rounded-3xl p-6 shadow-xs">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-600 flex items-center justify-center text-white shrink-0 shadow-md">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-extrabold text-rose-950">Account Restricted from Verification</h3>
+                        <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-extrabold bg-rose-200 text-rose-900 border border-rose-300">
+                          Permanent Block (2/2 Attempts Used)
+                        </span>
+                      </div>
+                      <p className="text-xs text-rose-800 mt-1.5 leading-relaxed">
+                        Your submitted ID documents were rejected 2 times. In accordance with Uvikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
+                      </p>
+                      {student.rejectionReason && (
+                        <div className="mt-3 p-3 rounded-xl bg-rose-100/80 border border-rose-200 text-xs text-rose-950">
+                          <strong>Latest Admin Feedback:</strong> {student.rejectionReason}
+                        </div>
+                      )}
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <a
+                          href="mailto:support@uvikart.com?subject=Verification%20Restriction%20Inquiry%20-%20STU-2026-0001"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+                        >
+                          Contact Academic Support &rarr;
+                        </a>
+                        <span className="text-[11px] text-rose-600 font-medium">
+                          Student ID: {studentId} • AK Referral Code: {akReferralCode}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* 3. Upload Form with Rejection Warning Banner (if rejected and remaining attempts > 0) */
                 <div className="mt-6 bg-amber-50/80 border border-amber-200 rounded-3xl p-6 shadow-xs">
+                  {/* Rejection Warning Banner */}
+                  {student.authState === 'verification_rejected' && (
+                    <div className="mb-5 rounded-2xl border-2 border-amber-300 bg-amber-100/70 p-4 shadow-xs">
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-amber-300 flex items-center justify-center text-amber-900 shrink-0">
+                          <AlertTriangle className="w-5 h-5 text-amber-800" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-amber-950">
+                              Verification rejected. You have {2 - (student.rejectionCount || 1)} re-upload attempt remaining before account restriction.
+                            </h4>
+                          </div>
+                          <p className="text-xs text-amber-900 mt-1">
+                            Please ensure your document is clearly legible, shows your full name matching your profile, and is within the 50 KB PNG/JPG file limit.
+                          </p>
+                          {student.rejectionReason && (
+                            <p className="mt-2 text-xs font-semibold text-rose-800 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+                              <strong>Admin Reason:</strong> {student.rejectionReason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-5 h-5 text-amber-600" />
-                      <h3 className="text-lg font-bold text-amber-900">Complete Your Student Verification</h3>
+                      <h3 className="text-lg font-bold text-amber-900">
+                        {student.authState === 'verification_rejected' ? 'Re-upload Your Student ID Card' : 'Complete Your Student Verification'}
+                      </h3>
                     </div>
                     {student.authState === 'verification_pending' && (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-200 text-amber-900">
@@ -2272,7 +2462,7 @@ export default function App() {
                       </>
                     ) : (
                       <>
-                        <ShieldCheck size={16} /> Submit Documents for Verification
+                        <ShieldCheck size={16} /> {student.authState === 'verification_rejected' ? 'Resubmit Corrected ID Documents' : 'Submit Documents for Verification'}
                       </>
                     )}
                   </button>

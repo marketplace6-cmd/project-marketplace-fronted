@@ -29,6 +29,9 @@ function badge(status: StudentVerificationStatus['status']) {
   if (status === 'APPROVED' || status === 'VERIFIED') {
     return { label: 'Approved', className: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 };
   }
+  if (status === 'BLOCKED') {
+    return { label: 'Account Restricted', className: 'bg-rose-100 text-rose-800', icon: AlertCircle };
+  }
   if (status === 'REJECTED') {
     return { label: 'Rejected', className: 'bg-rose-100 text-rose-800', icon: AlertCircle };
   }
@@ -166,6 +169,10 @@ export default function StudentVerificationPage({
       onLogin();
       return;
     }
+    if (verification?.status === 'BLOCKED' || (verification?.rejection_count || 0) >= 2) {
+      setError('Account is restricted from further verification submissions (maximum 2 attempts reached).');
+      return;
+    }
     if (!file || !challenge) {
       setError('Choose a student ID document and complete the verification challenge.');
       return;
@@ -280,16 +287,62 @@ export default function StudentVerificationPage({
             </div>
           ) : loading ? (
             <div className="flex items-center gap-2 py-6 text-sm text-slate-500"><RefreshCw size={16} className="animate-spin" /> Loading verification status…</div>
-          ) : verification && verification.status !== 'REJECTED' ? (
+          ) : verification && (verification.status === 'APPROVED' || verification.status === 'VERIFIED') ? (
+            <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50/80 p-6 shadow-xs">
+              {message && <p role="status" className="mb-3 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2 text-sm text-emerald-900 font-semibold">{message}</p>}
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <CheckCircle2 size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-emerald-950">Your Student Verification is Approved</h3>
+                  <p className="mt-1 text-xs text-emerald-800">
+                    Your student ID has been verified by the administrator. Full academic privileges and all project presentation (PPT) previews are unlocked.
+                  </p>
+                  <p className="mt-2 text-[11px] text-emerald-700 font-mono">Verified on {new Date(verification.updated_at || verification.created_at).toLocaleString()}</p>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setLoading(true); void refresh(); }} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"><RefreshCw size={14} /> Refresh status</button>
+                <button type="button" onClick={onContinue} className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-800 shadow-xs">Explore Project Previews &rarr;</button>
+              </div>
+            </div>
+          ) : verification && (verification.status === 'BLOCKED' || (verification.rejection_count || 0) >= 2) ? (
+            <div className="rounded-2xl border-2 border-rose-300 bg-rose-50/90 p-6 shadow-xs">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <AlertCircle size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-rose-950">Account Restricted from Verification</h3>
+                  <p className="mt-1 text-xs text-rose-800">
+                    Your submitted ID documents were rejected 2 times. In accordance with Uvikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
+                  </p>
+                  {verification.rejection_reason && (
+                    <div className="mt-3 p-3 rounded-xl bg-rose-100 border border-rose-200 text-xs text-rose-900">
+                      <strong>Rejection Feedback:</strong> {verification.rejection_reason}
+                    </div>
+                  )}
+                  <p className="mt-3 text-[11px] text-rose-600 font-semibold">
+                    Attempts used: 2 of 2 • Status: Permanent Restriction
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <a href="mailto:support@uvikart.com?subject=Verification%20Account%20Restriction%20Inquiry" className="rounded-lg bg-rose-700 px-4 py-2 text-xs font-bold text-white hover:bg-rose-800 shadow-xs">
+                  Contact Academic Support &rarr;
+                </a>
+                <button type="button" onClick={onContinue} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  Return to Catalogue
+                </button>
+              </div>
+            </div>
+          ) : verification && verification.status === 'PENDING' ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
               {message && <p role="status" className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{message}</p>}
-              <p className="text-sm font-semibold text-slate-900">
-                {verification.status === 'APPROVED' || verification.status === 'VERIFIED'
-                  ? 'Your student account is verified.'
-                  : 'Your submission is awaiting administrator review.'}
-              </p>
+              <p className="text-sm font-semibold text-slate-900">Your submission is awaiting administrator review.</p>
               <p className="mt-1 text-xs text-slate-600">Submitted {new Date(verification.created_at).toLocaleString()}</p>
-              {verification.status === 'PENDING' && <p className="mt-3 text-xs text-slate-600">You will be notified after a decision. Preview access remains subject to project eligibility and quota rules.</p>}
+              <p className="mt-3 text-xs text-slate-600">You will be notified after a decision. Preview access will unlock once verified.</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => { setLoading(true); void refresh(); }} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"><RefreshCw size={14} /> Refresh status</button>
                 <button type="button" onClick={onContinue} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Continue to marketplace</button>
@@ -298,9 +351,16 @@ export default function StudentVerificationPage({
           ) : (
             <>
               {verification?.status === 'REJECTED' && (
-                <div role="status" className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-                  <p className="text-sm font-semibold text-rose-900">A corrected document is required.</p>
-                  <p className="mt-1 text-sm text-rose-800">{verification.rejection_reason || 'Please upload a clearer, valid student ID card.'}</p>
+                <div role="status" className="rounded-xl border-2 border-amber-300 bg-amber-50 p-4">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                    <p className="text-sm font-bold text-amber-950">
+                      Verification rejected. You have {2 - (verification.rejection_count || 1)} re-upload attempt remaining before account restriction.
+                    </p>
+                  </div>
+                  <p className="mt-1.5 text-xs text-amber-900">
+                    <strong>Admin Reason:</strong> {verification.rejection_reason || 'Please upload a clearer, valid student ID card.'}
+                  </p>
                 </div>
               )}
               {message && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{message}</div>}

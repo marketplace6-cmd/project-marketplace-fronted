@@ -9,7 +9,7 @@ export interface VerificationQueueItem {
   phone: string | null;
   college: string | null;
   course: string | null;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED';
   submitted_at: string;
   document_name?: string;
   document_type?: string;
@@ -19,6 +19,8 @@ export interface VerificationQueueItem {
   back_image_url?: string;
   front_data_url?: string;
   back_data_url?: string;
+  rejection_count?: number;
+  rejection_reason?: string | null;
 }
 
 export interface VerificationQueue {
@@ -31,9 +33,10 @@ export interface VerificationQueue {
 
 export interface StudentVerificationStatus {
   id: number;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'VERIFIED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'VERIFIED' | 'BLOCKED';
   payment_phone: string;
   rejection_reason: string | null;
+  rejection_count?: number;
   created_at: string;
   updated_at: string;
   document_name: string;
@@ -95,7 +98,7 @@ function isOptionalString(value: unknown): value is string | null {
 function isStudentStatus(value: unknown): value is StudentVerificationStatus {
   return isRecord(value)
     && typeof value.id === 'number'
-    && ['PENDING', 'APPROVED', 'REJECTED', 'VERIFIED'].includes(String(value.status))
+    && ['PENDING', 'APPROVED', 'REJECTED', 'VERIFIED', 'BLOCKED'].includes(String(value.status))
     && typeof value.payment_phone === 'string'
     && isOptionalString(value.rejection_reason)
     && typeof value.created_at === 'string'
@@ -125,7 +128,7 @@ function isQueueItem(value: unknown): value is VerificationQueueItem {
     && isOptionalString(value.phone)
     && isOptionalString(value.college)
     && isOptionalString(value.course)
-    && ['PENDING', 'APPROVED', 'REJECTED'].includes(String(value.status))
+    && ['PENDING', 'APPROVED', 'REJECTED', 'BLOCKED'].includes(String(value.status))
     && typeof value.submitted_at === 'string';
 }
 
@@ -231,6 +234,7 @@ export const StudentVerificationAPI = {
             status: data.status,
             payment_phone: data.payment_phone || data.phone || '',
             rejection_reason: data.rejection_reason || null,
+            rejection_count: Number(data.rejection_count || 0),
             created_at: data.submitted_at || data.created_at || new Date().toISOString(),
             updated_at: data.updated_at || data.created_at || new Date().toISOString(),
             document_name: data.document_name || 'id-card.jpg',
@@ -838,7 +842,9 @@ export const AdminVerificationAPI = {
               front_data_url: front,
               back_data_url: back,
               front_image_url: front,
-              back_image_url: back
+              back_image_url: back,
+              rejection_count: d.rejection_count || 0,
+              rejection_reason: d.rejection_reason || null
             };
           });
           const pendingCount = items.filter((i) => i.status === 'PENDING').length;
@@ -975,42 +981,83 @@ export const AdminVerificationAPI = {
     status: 'APPROVED' | 'REJECTED',
     rejectionReason?: string
   ): Promise<void> {
+    // 1. Calculate rejection counter
+    const all = loadLocalVerifications();
+    const idx = all.findIndex((i) => i.id === verificationId || i.user_id === verificationId);
+    let newRejectionCount = 0;
+    if (idx !== -1) {
+      const prevCount = all[idx].rejection_count || 0;
+      newRejectionCount = status === 'REJECTED' ? prevCount + 1 : 0;
+    } else {
+      newRejectionCount = status === 'REJECTED' ? 1 : 0;
+    }
+
+    const finalStatus: 'APPROVED' | 'REJECTED' | 'BLOCKED' =
+      status === 'APPROVED' ? 'APPROVED' : newRejectionCount >= 2 ? 'BLOCKED' : 'REJECTED';
+
     try {
       await request(`/admin/verification/${verificationId}/decision`, accessToken, {
         method: 'POST',
-        body: JSON.stringify({ status, rejection_reason: rejectionReason })
+        body: JSON.stringify({ status: finalStatus === 'BLOCKED' ? 'REJECTED' : finalStatus, rejection_reason: rejectionReason })
       });
     } catch {
-      // 1. Update in Supabase
-      try {
-        await supabase.from('verifications').update({
-          status,
-          rejection_reason: rejectionReason || null,
-          updated_at: new Date().toISOString()
-        }).or(`id.eq.${verificationId},user_id.eq.${verificationId}`);
-      } catch {
-        /* ignore */
-      }
+      /* continue to Supabase & local state sync */
+    }
 
-      // 2. Offline fallback
-      const all = loadLocalVerifications();
-      const idx = all.findIndex((i) => i.id === verificationId || i.user_id === verificationId);
-      if (idx !== -1) {
-        all[idx] = { ...all[idx], status };
-        saveLocalVerifications(all);
-      }
+    // 2. Update Supabase
+    try {
+      await supabase.from('verifications').update({
+        status: finalStatus,
+        rejection_reason: rejectionReason || null,
+        rejection_count: newRejectionCount,
+        updated_at: new Date().toISOString()
+      }).or(`id.eq.${verificationId},user_id.eq.${verificationId}`);
+    } catch {
+      /* ignore Supabase error */
+    }
 
-      // 3. Update current student session if matching
-      try {
-        const sessRaw = localStorage.getItem('cpm_student_session');
-        if (sessRaw) {
-          const sess = JSON.parse(sessRaw);
-          sess.authState = status === 'APPROVED' ? 'verified' : 'verification_rejected';
-          localStorage.setItem('cpm_student_session', JSON.stringify(sess));
+    // 3. Update local verification queue
+    if (idx !== -1) {
+      all[idx] = {
+        ...all[idx],
+        status: finalStatus,
+        rejection_count: newRejectionCount,
+        rejection_reason: rejectionReason || null
+      };
+      saveLocalVerifications(all);
+    }
+
+    // 4. Update local student verification record
+    try {
+      const currentVerif = getLocalStudentVerification();
+      if (currentVerif) {
+        currentVerif.status = finalStatus === 'BLOCKED' ? 'BLOCKED' : finalStatus;
+        currentVerif.rejection_reason = rejectionReason || null;
+        currentVerif.rejection_count = newRejectionCount;
+        saveLocalStudentVerification(currentVerif);
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 5. Update student session authState
+    try {
+      const sessRaw = localStorage.getItem('cpm_student_session');
+      if (sessRaw) {
+        const sess = JSON.parse(sessRaw);
+        if (status === 'APPROVED') {
+          sess.authState = 'verified';
+          sess.rejectionCount = 0;
+          sess.rejectionReason = undefined;
+        } else {
+          sess.authState = newRejectionCount >= 2 ? 'verification_blocked' : 'verification_rejected';
+          sess.rejectionCount = newRejectionCount;
+          sess.rejectionReason = rejectionReason;
         }
-      } catch {
-        /* ignore */
+        localStorage.setItem('cpm_student_session', JSON.stringify(sess));
       }
+    } catch {
+      /* ignore */
     }
   }
 };

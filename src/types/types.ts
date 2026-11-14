@@ -3,7 +3,8 @@ export type AuthState =
   | 'logged_in' 
   | 'verification_pending' 
   | 'verified' 
-  | 'verification_rejected';
+  | 'verification_rejected'
+  | 'verification_blocked';
 
 export type ProjectCategory =
   | 'Web Development'
@@ -95,6 +96,8 @@ export interface StudentProfile {
   authState: AuthState;
   role: 'student' | 'admin';
   idDocumentName?: string;
+  rejectionReason?: string;
+  rejectionCount?: number;
   // Authoritative PPT Preview Credits (Server-supplied, 90-day reset)
   previewStats: {
     totalAllowed: 5;

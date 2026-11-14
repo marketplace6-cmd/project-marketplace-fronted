@@ -17,7 +17,9 @@ import {
   Wallet,
   Lock,
   AlertCircle,
-  X
+  X,
+  Filter,
+  Search
 } from 'lucide-react';
 import {
   ReferralApiError,
@@ -28,6 +30,22 @@ import {
   WithdrawalRequestItem
 } from './referralService';
 import { supabase } from '../utils/supabase/client';
+
+export interface ReferredStudentItem {
+  id: string | number;
+  level: number;
+  studentId: string;
+  studentName: string;
+  contact: string;
+  email?: string;
+  phone?: string;
+  college?: string;
+  course?: string;
+  status: 'Approved' | 'Pending' | 'Not Approved';
+  orderId?: number | null;
+  rewardEarned: number;
+  joinedAt: string;
+}
 
 export interface ReferralLevelStat {
   level: number;
@@ -181,6 +199,12 @@ export default function StudentReferralPage({
   const [submittingWithdrawal, setSubmittingWithdrawal] = useState(false);
   const [withdrawError, setWithdrawError] = useState('');
 
+  // Network Breakdown State (Levels 1-4)
+  const [networkStudents, setNetworkStudents] = useState<ReferredStudentItem[]>([]);
+  const [selectedLevel, setSelectedLevel] = useState<number>(1);
+  const [levelStatusFilter, setLevelStatusFilter] = useState<'ALL' | 'Approved' | 'Pending' | 'Not Approved'>('ALL');
+  const [levelSearch, setLevelSearch] = useState<string>('');
+
   useEffect(() => {
     let active = true;
 
@@ -201,13 +225,14 @@ export default function StudentReferralPage({
           }
         }
 
-        // 2. Query Supabase for real live referral and order records
+        // 2. Query Supabase for real live referral, order, verification, and payout records
         let refRows: any[] = [];
         let orderRows: any[] = [];
         let payoutRows: any[] = [];
+        let verifRows: any[] = [];
 
         try {
-          const [refRes, orderRes, payoutRes] = await Promise.all([
+          const [refRes, orderRes, payoutRes, verifRes] = await Promise.all([
             supabase
               .from('referrals')
               .select('*')
@@ -222,19 +247,138 @@ export default function StudentReferralPage({
               .from('payouts')
               .select('*')
               .or(`referral_code.eq.${effectiveCode},student_id.eq.${effectiveId}`)
+              .order('created_at', { ascending: false }),
+            supabase
+              .from('verifications')
+              .select('*')
+              .eq('referral_code', effectiveCode)
               .order('created_at', { ascending: false })
           ]);
 
           if (!refRes.error && refRes.data) refRows = refRes.data;
           if (!orderRes.error && orderRes.data) orderRows = orderRes.data;
           if (!payoutRes.error && payoutRes.data) payoutRows = payoutRes.data;
+          if (!verifRes.error && verifRes.data) verifRows = verifRes.data;
         } catch {
           /* Supabase offline or schema unavailable */
         }
 
+        // Incorporate local verification queue if any
+        try {
+          const rawLocalQueue = localStorage.getItem('cpm_verification_queue') || localStorage.getItem('cpm_verifications');
+          if (rawLocalQueue) {
+            const parsed = JSON.parse(rawLocalQueue);
+            if (Array.isArray(parsed)) {
+              for (const item of parsed) {
+                if (item.referral_code === effectiveCode && !verifRows.some((v) => String(v.id) === String(item.id) || String(v.user_id) === String(item.user_id))) {
+                  verifRows.push(item);
+                }
+              }
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+
         if (!active) return;
 
-        // 3. Merge real records into live attribution history
+        // 3. Construct Level-wise referred students directory (Levels 1-4)
+        const studentMap = new Map<string, ReferredStudentItem>();
+
+        // (a) Level 1: Direct Classmates from verifications
+        for (const v of verifRows) {
+          const stdId = v.student_id_code || (v.user_id ? `STU-2026-${String(v.user_id).padStart(4, '0')}` : `STU-2026-${String(v.id).padStart(4, '0')}`);
+          const matchingOrder = orderRows.find(
+            (o) => String(o.student_id) === String(stdId) || (o.email && o.email === v.email) || (o.phone && o.phone === v.phone)
+          );
+          const isApproved = v.status === 'APPROVED' || matchingOrder?.status === 'COMPLETED' || matchingOrder?.payment_status === 'PAID';
+          const isRejected = v.status === 'REJECTED';
+          const studentStatus: 'Approved' | 'Pending' | 'Not Approved' = isApproved
+            ? 'Approved'
+            : isRejected
+            ? 'Not Approved'
+            : 'Pending';
+          const reward = matchingOrder
+            ? Math.round(Number(matchingOrder.amount || 1000) * 0.15)
+            : (isApproved ? 150 : 0);
+
+          studentMap.set(stdId, {
+            id: `verif-${v.id}`,
+            level: 1,
+            studentId: stdId,
+            studentName: v.student_name || 'Classmate',
+            contact: [v.phone, v.email].filter(Boolean).join(' • ') || '—',
+            email: v.email || undefined,
+            phone: v.phone || undefined,
+            college: v.college || undefined,
+            course: v.course || undefined,
+            status: studentStatus,
+            orderId: matchingOrder ? Number(matchingOrder.id) : null,
+            rewardEarned: reward,
+            joinedAt: v.submitted_at || v.created_at || new Date().toISOString()
+          });
+        }
+
+        // (b) Multi-tier referral records from referrals table (Levels 1-4)
+        for (const r of refRows) {
+          const stdId = r.referred_student_id || `STU-2026-${String(r.id).padStart(4, '0')}`;
+          const lvl = Math.min(4, Math.max(1, Number(r.level || 1)));
+          const isApproved = r.status === 'SUCCESSFUL' || r.status === 'COMPLETED' || r.reward_status === 'PAID' || r.reward_status === 'ELIGIBLE';
+          const isRejected = r.status === 'REJECTED' || r.status === 'REVERSED';
+          const studentStatus: 'Approved' | 'Pending' | 'Not Approved' = isApproved
+            ? 'Approved'
+            : isRejected
+            ? 'Not Approved'
+            : 'Pending';
+          const tierRate = BASE_LEVEL_CONFIG.find((b) => b.level === lvl)?.ratePerSale || 150;
+          const reward = r.reward_amount ? Number(r.reward_amount) : (isApproved ? tierRate : 0);
+
+          if (!studentMap.has(stdId)) {
+            studentMap.set(stdId, {
+              id: `ref-${r.id}`,
+              level: lvl,
+              studentId: stdId,
+              studentName: r.referred_student_name || r.student_name || `Student ${stdId.slice(-4)}`,
+              contact: r.contact || [r.phone, r.email].filter(Boolean).join(' • ') || '—',
+              email: r.email || undefined,
+              phone: r.phone || undefined,
+              college: r.college || undefined,
+              course: r.course || undefined,
+              status: studentStatus,
+              orderId: r.order_id ? Number(r.order_id) : null,
+              rewardEarned: reward,
+              joinedAt: r.created_at || new Date().toISOString()
+            });
+          }
+        }
+
+        // (c) Qualifying direct orders
+        for (const o of orderRows) {
+          const stdId = o.student_id || `STU-2026-${String(o.id).padStart(4, '0')}`;
+          if (!studentMap.has(stdId)) {
+            const isPaid = o.status === 'COMPLETED' || o.payment_status === 'PAID' || o.payment_status === 'COMPLETED';
+            studentMap.set(stdId, {
+              id: `order-${o.id}`,
+              level: 1,
+              studentId: stdId,
+              studentName: o.student_name || `Customer #${o.id}`,
+              contact: [o.phone, o.email].filter(Boolean).join(' • ') || '—',
+              email: o.email || undefined,
+              phone: o.phone || undefined,
+              status: isPaid ? 'Approved' : 'Pending',
+              orderId: Number(o.id),
+              rewardEarned: isPaid ? Math.round(Number(o.amount || 1000) * 0.15) : 0,
+              joinedAt: o.created_at || new Date().toISOString()
+            });
+          }
+        }
+
+        const liveStudents = Array.from(studentMap.values()).sort(
+          (a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime()
+        );
+        setNetworkStudents(liveStudents);
+
+        // 4. Merge real records into live attribution history
         const historyMap = new Map<number, StudentReferralHistoryItem>();
 
         // Incorporate backend data if any
@@ -282,7 +426,7 @@ export default function StudentReferralPage({
           (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
 
-        // 4. Calculate summary counters strictly from live data
+        // 5. Calculate summary counters strictly from live data
         const totalSuccessful = liveHistory.filter(
           (h) => h.status === 'COMPLETED' || h.status === 'SUCCESSFUL' || h.reward_status === 'PAID'
         ).length;
@@ -299,16 +443,11 @@ export default function StudentReferralPage({
           .filter((h) => h.reward_status === 'PAID' || h.reward_status === 'SETTLED')
           .reduce((sum, h) => sum + (h.reward_amount || 0), 0);
 
-        // 5. Calculate Level 1-4 stats strictly from live data
+        // 6. Calculate Level 1-4 stats strictly from live data
         const updatedLevelStats = BASE_LEVEL_CONFIG.map((tier) => {
-          const tierReferrals = refRows.filter((r: any) => Number(r.level || 1) === tier.level);
-          const activeStudents = tierReferrals.filter(
-            (r: any) => r.status === 'COMPLETED' || r.status === 'SUCCESSFUL' || r.order_id
-          ).length;
-
-          let tierEarnings = tierReferrals
-            .filter((r: any) => r.reward_status === 'PAID' || r.reward_status === 'ELIGIBLE' || r.status === 'COMPLETED')
-            .reduce((sum: number, r: any) => sum + Number(r.reward_amount || tier.ratePerSale), 0);
+          const tierStudents = liveStudents.filter((s) => s.level === tier.level);
+          const activeStudents = tierStudents.length;
+          let tierEarnings = tierStudents.reduce((sum, s) => sum + s.rewardEarned, 0);
 
           if (tier.level === 1 && tierEarnings === 0 && (totalSuccessful > 0 || eligibleRewards > 0 || paidRewards > 0)) {
             tierEarnings = eligibleRewards + paidRewards;
@@ -316,7 +455,7 @@ export default function StudentReferralPage({
 
           return {
             ...tier,
-            activeCount: tier.level === 1 ? Math.max(activeStudents, totalSuccessful) : activeStudents,
+            activeCount: activeStudents,
             totalEarnings: tierEarnings
           };
         });
@@ -370,6 +509,7 @@ export default function StudentReferralPage({
         setError(err instanceof Error ? err.message : 'Unable to load live referral data.');
         setDashboard(createDefaultDashboard(effectiveId, effectiveCode));
         setLevelStats(createInitialLevelStats());
+        setNetworkStudents([]);
         setPayouts([]);
       } finally {
         if (active) setLoading(false);
@@ -378,13 +518,16 @@ export default function StudentReferralPage({
 
     void loadLiveReferralData();
 
-    // Realtime Supabase Subscription: Auto-update on new referrals, orders, or payouts
+    // Realtime Supabase Subscription: Auto-update on new referrals, orders, verifications, or payouts
     const channel = supabase
       .channel(`uvikart-referral-live-${referralCode || 'A7K2'}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
         void loadLiveReferralData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        void loadLiveReferralData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'verifications' }, () => {
         void loadLiveReferralData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payouts' }, () => {
@@ -804,100 +947,392 @@ export default function StudentReferralPage({
       </div>
 
       {/* TAB 1: LEVEL-WISE REFERRAL STATS (LEVELS 1-4) */}
-      {activeTab === 'levels' && (
-        <section className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">4-Tier Multi-Level Reward Structure</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Earn residual rewards not just from friends you refer, but also from the peer networks they invite.
-              </p>
-            </div>
-            <div className="text-xs font-semibold text-indigo-700 bg-white px-3 py-1.5 rounded-xl border border-indigo-200">
-              Total Network Earnings: <strong>{formatCurrency(totalNetworkEarnings)}</strong>
-            </div>
-          </div>
+      {activeTab === 'levels' && (() => {
+        const selectedTierConfig = BASE_LEVEL_CONFIG.find((b) => b.level === selectedLevel) || BASE_LEVEL_CONFIG[0];
+        const currentLevelAllStudents = networkStudents.filter((s) => s.level === selectedLevel);
+        const approvedCount = currentLevelAllStudents.filter((s) => s.status === 'Approved').length;
+        const pendingCount = currentLevelAllStudents.filter((s) => s.status === 'Pending').length;
+        const notApprovedCount = currentLevelAllStudents.filter((s) => s.status === 'Not Approved').length;
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {levelStats.map((tier) => (
-              <div
-                key={tier.level}
-                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between space-y-4 hover:border-indigo-300 transition-all"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold text-[11px] border border-indigo-100">
-                      Level {tier.level}
-                    </span>
-                    <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      {tier.commission} Reward
-                    </span>
-                  </div>
-                  <h4 className="font-extrabold text-slate-900 text-sm mt-1">{tier.name}</h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">{tier.description}</p>
-                </div>
+        const filteredLevelStudents = currentLevelAllStudents.filter((s) => {
+          const matchesStatus =
+            levelStatusFilter === 'ALL'
+              ? true
+              : levelStatusFilter === 'Approved'
+              ? s.status === 'Approved'
+              : levelStatusFilter === 'Pending'
+              ? s.status === 'Pending'
+              : s.status === 'Not Approved';
 
-                <div className="pt-3 border-t border-slate-100 space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Active Students:</span>
-                    <span className="font-bold text-slate-900">{tier.activeCount}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Avg. Reward/Sale:</span>
-                    <span className="font-mono font-semibold text-slate-800">~₹{tier.ratePerSale}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-bold pt-1 border-t border-slate-50">
-                    <span className="text-indigo-950">Earned at Tier {tier.level}:</span>
-                    <span className="text-emerald-700 font-extrabold">{formatCurrency(tier.totalEarnings)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          const q = levelSearch.toLowerCase().trim();
+          const matchesSearch =
+            !q ||
+            s.studentName.toLowerCase().includes(q) ||
+            s.studentId.toLowerCase().includes(q) ||
+            s.contact.toLowerCase().includes(q) ||
+            (s.college && s.college.toLowerCase().includes(q)) ||
+            (s.course && s.course.toLowerCase().includes(q));
 
-          {/* Level Progress Table */}
-          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          return matchesStatus && matchesSearch;
+        });
+
+        return (
+          <section className="space-y-6">
+            {/* Header Banner */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
               <div>
-                <h4 className="text-sm font-bold text-slate-900">Network Tier Performance Table</h4>
-                <p className="text-xs text-slate-500 mt-0.5">Comprehensive audit of level attribution and qualified payouts</p>
+                <h3 className="text-sm font-bold text-slate-900">4-Tier Multi-Level Reward Structure</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Earn residual rewards not just from friends you refer, but also from the peer networks they invite.
+                </p>
               </div>
-              <span className="text-xs font-semibold text-slate-500">Updated: Today</span>
+              <div className="text-xs font-semibold text-indigo-700 bg-white px-3 py-1.5 rounded-xl border border-indigo-200">
+                Total Network Earnings: <strong>{formatCurrency(totalNetworkEarnings)}</strong>
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-200 text-[10px] tracking-wider">
-                  <tr>
-                    <th className="py-3 px-4">Tier Level</th>
-                    <th className="py-3 px-4">Network Scope</th>
-                    <th className="py-3 px-4">Commission %</th>
-                    <th className="py-3 px-4">Qualified Referrals</th>
-                    <th className="py-3 px-4">Total Earned</th>
-                    <th className="py-3 px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {levelStats.map((tier) => (
-                    <tr key={tier.level} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-bold text-indigo-600">Level {tier.level}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">{tier.name}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-emerald-600">{tier.commission}</td>
-                      <td className="py-3 px-4">{tier.activeCount} students</td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">{formatCurrency(tier.totalEarnings)}</td>
-                      <td className="py-3 px-4">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          <CheckCircle2 size={12} /> Active Tier
+            {/* 4 Interactive Tier Cards */}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {levelStats.map((tier) => {
+                const isSelected = selectedLevel === tier.level;
+                return (
+                  <div
+                    key={tier.level}
+                    onClick={() => {
+                      setSelectedLevel(tier.level);
+                      setLevelStatusFilter('ALL');
+                      setLevelSearch('');
+                    }}
+                    className={`cursor-pointer rounded-2xl border p-5 shadow-xs flex flex-col justify-between space-y-4 transition-all text-left ${
+                      isSelected
+                        ? 'border-indigo-600 ring-2 ring-indigo-500/30 bg-indigo-50/30 shadow-md shadow-indigo-600/5'
+                        : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-xs'
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`px-2.5 py-1 rounded-lg font-black text-[11px] border transition-colors ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-700'
+                              : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                          }`}
+                        >
+                          Level {tier.level}
                         </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          {tier.commission} Reward
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-extrabold text-slate-900 text-sm mt-1">{tier.name}</h4>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/70 px-2 py-0.5 rounded-full">
+                            Active Level
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 leading-relaxed">{tier.description}</p>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 space-y-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Active Students:</span>
+                        <span className="font-bold text-slate-900">{tier.activeCount}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Avg. Reward/Sale:</span>
+                        <span className="font-mono font-semibold text-slate-800">~₹{tier.ratePerSale}</span>
+                      </div>
+                      <div className="flex justify-between text-xs font-bold pt-1 border-t border-slate-50">
+                        <span className="text-indigo-950">Earned at Tier {tier.level}:</span>
+                        <span className="text-emerald-700 font-extrabold">{formatCurrency(tier.totalEarnings)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-        </section>
-      )}
+
+            {/* Level-Wise Detailed Breakdown Section */}
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
+              {/* Header with Level Selector Tabs */}
+              <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/60">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-black text-xs">
+                      Level {selectedTierConfig.level}
+                    </span>
+                    <h4 className="text-base font-extrabold text-slate-900">
+                      {selectedTierConfig.name} Directory
+                    </h4>
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      {selectedTierConfig.commission} Reward Rate (~₹{selectedTierConfig.ratePerSale}/sale)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                    {selectedTierConfig.description}
+                  </p>
+                </div>
+
+                {/* Level Selector Buttons */}
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  {BASE_LEVEL_CONFIG.map((tier) => {
+                    const count = networkStudents.filter((s) => s.level === tier.level).length;
+                    const isSelected = selectedLevel === tier.level;
+                    return (
+                      <button
+                        key={tier.level}
+                        type="button"
+                        onClick={() => {
+                          setSelectedLevel(tier.level);
+                          setLevelStatusFilter('ALL');
+                          setLevelSearch('');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>Level {tier.level}</span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                            isSelected ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Filter Bar & Search */}
+              <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white">
+                {/* Status Filters */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-500 mr-1 flex items-center gap-1">
+                    <Filter size={13} /> Filter:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setLevelStatusFilter('ALL')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                      levelStatusFilter === 'ALL'
+                        ? 'bg-slate-900 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    All ({currentLevelAllStudents.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLevelStatusFilter('Approved')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                      levelStatusFilter === 'Approved'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/50'
+                    }`}
+                  >
+                    Approved / Successful ({approvedCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLevelStatusFilter('Pending')}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                      levelStatusFilter === 'Pending'
+                        ? 'bg-amber-500 text-white shadow-2xs'
+                        : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/50'
+                    }`}
+                  >
+                    Pending ({pendingCount})
+                  </button>
+                  {notApprovedCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLevelStatusFilter('Not Approved')}
+                      className={`px-3 py-1 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                        levelStatusFilter === 'Not Approved'
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/50'
+                      }`}
+                    >
+                      Not Approved ({notApprovedCount})
+                    </button>
+                  )}
+                </div>
+
+                {/* Search Box */}
+                <div className="relative min-w-[220px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={levelSearch}
+                    onChange={(e) => setLevelSearch(e.target.value)}
+                    placeholder="Search student, ID, contact..."
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Students List / Table */}
+              {filteredLevelStudents.length === 0 ? (
+                <div className="py-14 px-5 text-center">
+                  <div className="mx-auto w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <h4 className="mt-3 text-sm font-bold text-slate-900">
+                    {levelSearch || levelStatusFilter !== 'ALL'
+                      ? `No students match your filter in Level ${selectedLevel}`
+                      : `No referrals in Level ${selectedLevel} yet`}
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                    {levelSearch || levelStatusFilter !== 'ALL'
+                      ? 'Try resetting your status filter or search term to see other students in this tier.'
+                      : selectedLevel === 1
+                      ? 'No direct classmates have registered with your AK Referral Code yet. Share your code with classmates to start building your direct Level 1 network!'
+                      : selectedLevel === 2
+                      ? 'No peer invites yet. When your direct Level 1 classmates refer other students, they will automatically appear here as Level 2 referrals.'
+                      : selectedLevel === 3
+                      ? 'No department network referrals yet. Referrals invited by your Level 2 peers will appear in Level 3.'
+                      : 'No campus community referrals yet. Campus-wide network expansion will appear here as your referral chain grows.'}
+                  </p>
+                  {selectedLevel === 1 && !levelSearch && levelStatusFilter === 'ALL' && (
+                    <div className="mt-4 flex justify-center gap-2">
+                      <button
+                        onClick={copyCode}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                      >
+                        <Copy size={13} /> Copy Code ({effectiveCode})
+                      </button>
+                      <button
+                        onClick={copyLink}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Share2 size={13} /> Share Link
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[760px]">
+                    <thead className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-200 text-[10px] tracking-wider">
+                      <tr>
+                        <th className="py-3 px-4">Student ID</th>
+                        <th className="py-3 px-4">Student Name</th>
+                        <th className="py-3 px-4">Contact Details</th>
+                        <th className="py-3 px-4">Academic Course / College</th>
+                        <th className="py-3 px-4">Verification / Status</th>
+                        <th className="py-3 px-4">Reward Generated</th>
+                        <th className="py-3 px-4">Date Joined</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                      {filteredLevelStudents.map((student) => (
+                        <tr key={student.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3 px-4 font-mono font-bold text-indigo-700">
+                            <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-[11px]">
+                              {student.studentId}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-900">
+                            {student.studentName}
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">
+                            <div className="space-y-0.5">
+                              {student.phone && <p className="font-mono text-slate-800 text-[11px]">{student.phone}</p>}
+                              {student.email && <p className="text-[11px] text-slate-500">{student.email}</p>}
+                              {!student.phone && !student.email && <p className="text-slate-400">—</p>}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">
+                            <p className="font-semibold text-slate-800">{student.college || 'College'}</p>
+                            <p className="text-[11px] text-slate-500">{student.course || 'Degree / Dept'}</p>
+                          </td>
+                          <td className="py-3 px-4">
+                            {student.status === 'Approved' ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                <CheckCircle2 size={12} /> Approved
+                              </span>
+                            ) : student.status === 'Pending' ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                                <Clock size={12} /> Pending
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                                <X size={12} /> Not Approved
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-mono font-bold">
+                            {student.rewardEarned > 0 ? (
+                              <span className="text-emerald-700 font-extrabold">+{formatCurrency(student.rewardEarned)}</span>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">Awaiting order</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
+                            {new Date(student.joinedAt).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Level Progress Summary Audit Table */}
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-xs">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">Network Tier Performance Table</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">Comprehensive audit of level attribution and qualified payouts</p>
+                </div>
+                <span className="text-xs font-semibold text-slate-500">Updated: Today</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-200 text-[10px] tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Tier Level</th>
+                      <th className="py-3 px-4">Network Scope</th>
+                      <th className="py-3 px-4">Commission %</th>
+                      <th className="py-3 px-4">Qualified Referrals</th>
+                      <th className="py-3 px-4">Total Earned</th>
+                      <th className="py-3 px-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                    {levelStats.map((tier) => (
+                      <tr key={tier.level} className="hover:bg-slate-50/50">
+                        <td className="py-3 px-4 font-bold text-indigo-600">Level {tier.level}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900">{tier.name}</td>
+                        <td className="py-3 px-4 font-mono font-bold text-emerald-600">{tier.commission}</td>
+                        <td className="py-3 px-4">{tier.activeCount} students</td>
+                        <td className="py-3 px-4 font-mono font-bold text-slate-900">{formatCurrency(tier.totalEarnings)}</td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            <CheckCircle2 size={12} /> Active Tier
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* TAB 2: PAYOUT HISTORY & SETTLEMENTS */}
       {activeTab === 'payouts' && (

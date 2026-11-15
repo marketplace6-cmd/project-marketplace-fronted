@@ -1,4 +1,4 @@
-﻿-- Unikart Supabase Database Schema Update
+-- Unikart Supabase Database Schema Update
 -- Adds missing front_image_url and back_image_url columns to the verifications table
 
 ALTER TABLE IF EXISTS public.verifications

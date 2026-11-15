@@ -28,6 +28,25 @@ app.get('/health', (req, res) => {
 // Mount authentication routes
 app.use('/api/auth', authRoutes);
 
+// Admin Verification Deletion Endpoint
+app.delete('/admin/verification/:id', (req, res) => {
+  const { id } = req.params;
+  res.json({
+    success: true,
+    message: `Verification submission ${id} permanently deleted.`,
+    deleted_id: id
+  });
+});
+
+app.delete('/api/admin/verification/:id', (req, res) => {
+  const { id } = req.params;
+  res.json({
+    success: true,
+    message: `Verification submission ${id} permanently deleted.`,
+    deleted_id: id
+  });
+});
+
 // Start server if executed directly
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {

@@ -840,188 +840,44 @@ export const StudentAuthAPI = {
   }
 };
 
-export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
-  {
-    id: 7611,
-    user_id: 7611,
-    student_id_code: 'STU-2026-7611',
-    student_name: 'Mayank Kumar',
-    email: 'marketplace6@gmail.com',
-    phone: '7004273758',
-    college: 'Ranchi',
-    course: 'B.Tech Computer Science',
-    status: 'RE-UPLOADED',
-    submitted_at: '2026-11-15T01:58:00.000Z',
-    document_name: '16.jpg',
-    document_type: 'Student ID Card (Front & Back)',
-    referral_code: 'A7K2',
-    front_data_url: SAMPLE_STUDENT_ID_FRONT,
-    back_data_url: SAMPLE_STUDENT_ID_BACK,
-    front_image_url: SAMPLE_STUDENT_ID_FRONT,
-    back_image_url: SAMPLE_STUDENT_ID_BACK,
-    rejection_count: 1,
-    rejection_reason: null
-  },
-  {
-    id: 4279,
-    user_id: 4279,
-    student_id_code: 'STU-2026-4279',
-    student_name: 'Mayank Kumar',
-    email: 'mayank@gmail.com',
-    phone: '7004273758',
-    college: 'ranchi',
-    course: 'B.Tech Computer Science',
-    status: 'PENDING',
-    submitted_at: '2026-11-15T01:43:00.000Z',
-    document_name: '16.jpg',
-    document_type: 'Student ID Card (Front & Back)',
-    referral_code: 'A7K2',
-    front_data_url: SAMPLE_STUDENT_ID_FRONT,
-    back_data_url: SAMPLE_STUDENT_ID_BACK,
-    front_image_url: SAMPLE_STUDENT_ID_FRONT,
-    back_image_url: SAMPLE_STUDENT_ID_BACK
-  },
-  {
-    id: 6802,
-    user_id: 6802,
-    student_id_code: 'STU-2026-6802',
-    student_name: 'Student UMU',
-    email: 'student@umu.ac.in',
-    phone: '7004273757',
-    college: 'ranchi',
-    course: 'B.Tech Computer Science',
-    status: 'PENDING',
-    submitted_at: '2026-11-15T01:08:00.000Z',
-    document_name: '16.jpg',
-    document_type: 'Student ID Card (Front & Back)',
-    referral_code: 'A7K2',
-    front_data_url: SAMPLE_STUDENT_ID_FRONT,
-    back_data_url: SAMPLE_STUDENT_ID_BACK,
-    front_image_url: SAMPLE_STUDENT_ID_FRONT,
-    back_image_url: SAMPLE_STUDENT_ID_BACK
-  },
-  {
-    id: 3911,
-    user_id: 3911,
-    student_id_code: 'STU-2026-3911',
-    student_name: 'rahul',
-    email: 'shubham12@gmail.com',
-    phone: '7004273758',
-    college: 'umu',
-    course: 'b.tech',
-    status: 'PENDING',
-    submitted_at: '2026-11-14T23:31:15.000Z',
-    document_name: '16.jpg',
-    document_type: 'Student ID Card (Front & Back)',
-    referral_code: 'A7K2',
-    front_data_url: SAMPLE_STUDENT_ID_FRONT,
-    back_data_url: SAMPLE_STUDENT_ID_BACK,
-    front_image_url: SAMPLE_STUDENT_ID_FRONT,
-    back_image_url: SAMPLE_STUDENT_ID_BACK
-  },
-  {
-    id: 1346,
-    user_id: 1346,
-    student_id_code: 'STU-2026-0001',
-    student_name: 'Mayank Kumar',
-    email: 'mayank.kumar@student.umu.ac.in',
-    phone: '7004273758',
-    college: 'Usha Martin University',
-    course: 'B.Tech Computer Science & Engineering',
-    status: 'PENDING',
-    submitted_at: '2026-11-14T11:55:37.000Z',
-    document_name: '16.jpg',
-    document_type: 'Student ID Card (Front & Back)',
-    referral_code: 'A7K2',
-    front_data_url: SAMPLE_STUDENT_ID_FRONT,
-    back_data_url: SAMPLE_STUDENT_ID_BACK,
-    front_image_url: SAMPLE_STUDENT_ID_FRONT,
-    back_image_url: SAMPLE_STUDENT_ID_BACK
-  },
-  {
-    id: 2,
-    user_id: 1347,
-    student_id_code: 'STU-2026-0002',
-    student_name: 'Priya Sharma',
-    email: 'priya.sharma@student.umu.ac.in',
-    phone: '7004273759',
-    college: 'Usha Martin University',
-    course: 'BCA Data Science',
-    status: 'PENDING',
-    submitted_at: '2026-11-14T09:20:15.000Z',
-    document_name: 'upi_payment_proof_receipt.png',
-    document_type: 'Payment Proof (UPI Transaction)',
-    referral_code: 'PS88'
-  },
-  {
-    id: 3,
-    user_id: 1348,
-    student_id_code: 'STU-2026-0003',
-    student_name: 'Rahul Verma',
-    email: 'rahul.verma@student.umu.ac.in',
-    phone: '7004273760',
-    college: 'Usha Martin University',
-    course: 'B.Tech AI & Machine Learning',
-    status: 'APPROVED',
-    submitted_at: '2026-11-13T16:45:00.000Z',
-    document_name: 'project_architecture_preview.png',
-    document_type: 'Project Preview & Architecture Image',
-    referral_code: 'RV14'
-  },
-  {
-    id: 4,
-    user_id: 1349,
-    student_id_code: 'STU-2026-0004',
-    student_name: 'Arjun Mehta',
-    email: 'arjun.mehta@student.umu.ac.in',
-    phone: '7004273761',
-    college: 'Usha Martin University',
-    course: 'B.Tech Mechanical',
-    status: 'REJECTED',
-    submitted_at: '2026-11-12T14:10:00.000Z',
-    document_name: 'blurry_id_card_scan.jpg',
-    document_type: 'Student ID Card (Front Side)',
-    referral_code: 'AM92'
-  }
-];
+export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [];
 
 const LOCAL_VERIFICATIONS_KEY = 'cpm_admin_verifications';
 
 function loadLocalVerifications(): VerificationQueueItem[] {
   try {
     const raw = localStorage.getItem(LOCAL_VERIFICATIONS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const items = parsed.map((item: VerificationQueueItem) => {
-          const hasRealFront = (item.front_data_url && typeof item.front_data_url === 'string' && item.front_data_url.startsWith('data:image/')) ||
-                               (item.front_image_url && typeof item.front_image_url === 'string' && !item.front_image_url.endsWith('.svg'));
-          const front = hasRealFront ? (item.front_data_url || item.front_image_url) : SAMPLE_STUDENT_ID_FRONT;
-          const hasRealBack = (item.back_data_url && typeof item.back_data_url === 'string' && item.back_data_url.startsWith('data:image/')) ||
-                              (item.back_image_url && typeof item.back_image_url === 'string' && !item.back_image_url.endsWith('.svg'));
-          const back = hasRealBack ? (item.back_data_url || item.back_image_url) : SAMPLE_STUDENT_ID_BACK;
-          const docName = (item.document_name && !item.document_name.includes('document_upload.png') && !item.document_name.startsWith('data:'))
-            ? item.document_name
-            : '16.jpg';
-
-          return {
-            ...item,
-            front_data_url: front,
-            back_data_url: back,
-            front_image_url: front,
-            back_image_url: back,
-            document_name: docName,
-            document_type: item.document_type || 'Student ID Card (Front & Back)',
-            student_id_code: item.student_id_code || (item.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(item.user_id || item.id).padStart(4, '0')}`),
-            referral_code: item.referral_code || 'A7K2'
-          };
-        });
-        return sortVerificationItems(items);
-      }
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [];
     }
-    return sortVerificationItems(DEFAULT_VERIFICATION_QUEUE_ITEMS);
+    const items = parsed.map((item: VerificationQueueItem) => {
+      const hasRealFront = (item.front_data_url && typeof item.front_data_url === 'string' && item.front_data_url.startsWith('data:image/')) ||
+                           (item.front_image_url && typeof item.front_image_url === 'string' && !item.front_image_url.endsWith('.svg'));
+      const front = hasRealFront ? (item.front_data_url || item.front_image_url) : SAMPLE_STUDENT_ID_FRONT;
+      const hasRealBack = (item.back_data_url && typeof item.back_data_url === 'string' && item.back_data_url.startsWith('data:image/')) ||
+                          (item.back_image_url && typeof item.back_image_url === 'string' && !item.back_image_url.endsWith('.svg'));
+      const back = hasRealBack ? (item.back_data_url || item.back_image_url) : SAMPLE_STUDENT_ID_BACK;
+      const docName = (item.document_name && !item.document_name.includes('document_upload.png') && !item.document_name.startsWith('data:'))
+        ? item.document_name
+        : 'Front ID Card';
+
+      return {
+        ...item,
+        front_data_url: front,
+        back_data_url: back,
+        front_image_url: front,
+        back_image_url: back,
+        document_name: docName,
+        document_type: item.document_type || 'Student ID Card (Front & Back)',
+        student_id_code: item.student_id_code || `STU-2026-${String(item.user_id || item.id).padStart(4, '0')}`,
+        referral_code: item.referral_code || item.student_id_code || `STU-2026-${String(item.user_id || item.id).padStart(4, '0')}`
+      };
+    });
+    return sortVerificationItems(items);
   } catch {
-    return sortVerificationItems(DEFAULT_VERIFICATION_QUEUE_ITEMS);
+    return [];
   }
 }
 
@@ -1043,69 +899,85 @@ export const AdminVerificationAPI = {
       if (filters.search) query.set('search', filters.search);
       if (filters.status) query.set('verification_status', filters.status);
       const data = await request(`/admin/verifications?${query}`, accessToken);
-      if (!isQueue(data)) {
-        throw new VerificationApiError('Verification queue response is invalid.', 502);
+      if (isQueue(data)) {
+        return {
+          ...data,
+          items: sortVerificationItems(data.items)
+        };
       }
-      return {
-        ...data,
-        items: sortVerificationItems(data.items)
-      };
     } catch {
-      // 1. Try Supabase
-      try {
-        let sbQuery = supabase.from('verifications').select('*', { count: 'exact' });
-        if (filters.status) sbQuery = sbQuery.eq('status', filters.status);
-        if (filters.search) {
-          sbQuery = sbQuery.or(`student_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,college.ilike.%${filters.search}%,course.ilike.%${filters.search}%`);
-        }
-        const { data, count, error } = await sbQuery.order('id', { ascending: false });
-        if (!error && data && data.length > 0) {
-          const items: VerificationQueueItem[] = data.map((d: any) => {
-            const hasRealFront = (d.front_data_url && typeof d.front_data_url === 'string' && d.front_data_url.startsWith('data:image/')) ||
-                                 (d.front_image_url && typeof d.front_image_url === 'string' && !d.front_image_url.endsWith('.svg'));
-            const front = hasRealFront ? (d.front_data_url || d.front_image_url) : SAMPLE_STUDENT_ID_FRONT;
-            const hasRealBack = (d.back_data_url && typeof d.back_data_url === 'string' && d.back_data_url.startsWith('data:image/')) ||
-                                (d.back_image_url && typeof d.back_image_url === 'string' && !d.back_image_url.endsWith('.svg'));
-            const back = hasRealBack ? (d.back_data_url || d.back_image_url) : SAMPLE_STUDENT_ID_BACK;
-            const docName = (d.document_name && !d.document_name.includes('document_upload.png') && !d.document_name.startsWith('data:'))
-              ? d.document_name
-              : '16.jpg';
+      /* Proceed to direct Supabase query */
+    }
 
-            return {
-              id: Number(d.id),
-              user_id: Number(d.user_id || d.id),
-              student_name: d.student_name,
-              email: d.email || null,
-              phone: d.phone || null,
-              college: d.college || null,
-              course: d.course || null,
-              status: d.status,
-              submitted_at: d.submitted_at || d.created_at || new Date().toISOString(),
-              document_name: docName,
-              document_type: d.document_type || 'Student ID Card (Front & Back)',
-              student_id_code: d.student_id_code || (Number(d.user_id) === 1346 ? 'STU-2026-0001' : `STU-2026-${String(d.user_id || d.id).padStart(4, '0')}`),
-              referral_code: d.referral_code || 'A7K2',
-              front_data_url: front,
-              back_data_url: back,
-              front_image_url: front,
-              back_image_url: back,
-              rejection_count: d.rejection_count || 0,
-              rejection_reason: d.rejection_reason || null
-            };
-          });
-          const sortedItems = sortVerificationItems(items);
-          const pendingCount = items.filter((i) => i.status === 'PENDING' || i.status === 'RE-UPLOADED').length;
+    // 1. Direct Supabase Query
+    try {
+      let sbQuery = supabase.from('verifications').select('*', { count: 'exact' });
+      if (filters.status) sbQuery = sbQuery.eq('status', filters.status);
+      if (filters.search) {
+        sbQuery = sbQuery.or(
+          `student_name.ilike.%${filters.search}%,email.ilike.%${filters.search}%,college.ilike.%${filters.search}%,course.ilike.%${filters.search}%,student_id_code.ilike.%${filters.search}%`
+        );
+      }
+      const { data, count, error } = await sbQuery.order('id', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        // When database returns an empty array, return a clean empty queue - NEVER repopulate mock records!
+        if (data.length === 0) {
           return {
-            items: sortedItems,
-            total: count || sortedItems.length,
-            pending_count: pendingCount,
+            items: [],
+            total: 0,
+            pending_count: 0,
             page: filters.page,
             page_size: 25
           };
         }
-      } catch {
-        /* proceed to localStorage */
+
+        const items: VerificationQueueItem[] = data.map((d: any) => {
+          const hasRealFront = (d.front_data_url && typeof d.front_data_url === 'string' && d.front_data_url.startsWith('data:image/')) ||
+                               (d.front_image_url && typeof d.front_image_url === 'string' && !d.front_image_url.endsWith('.svg'));
+          const front = hasRealFront ? (d.front_data_url || d.front_image_url) : SAMPLE_STUDENT_ID_FRONT;
+          const hasRealBack = (d.back_data_url && typeof d.back_data_url === 'string' && d.back_data_url.startsWith('data:image/')) ||
+                              (d.back_image_url && typeof d.back_image_url === 'string' && !d.back_image_url.endsWith('.svg'));
+          const back = hasRealBack ? (d.back_data_url || d.back_image_url) : SAMPLE_STUDENT_ID_BACK;
+          const docName = (d.document_name && !d.document_name.includes('document_upload.png') && !d.document_name.startsWith('data:'))
+            ? d.document_name
+            : 'Front ID Card';
+
+          const studentId = d.student_id_code || `STU-2026-${String(d.user_id || d.id).padStart(4, '0')}`;
+          return {
+            id: Number(d.id),
+            user_id: Number(d.user_id || d.id),
+            student_name: d.student_name,
+            email: d.email || null,
+            phone: d.phone || null,
+            college: d.college || null,
+            course: d.course || null,
+            status: d.status,
+            submitted_at: d.submitted_at || d.created_at || new Date().toISOString(),
+            document_name: docName,
+            document_type: d.document_type || 'Student ID Card (Front & Back)',
+            student_id_code: studentId,
+            referral_code: d.referral_code || studentId,
+            front_data_url: front,
+            back_data_url: back,
+            front_image_url: front,
+            back_image_url: back,
+            rejection_count: d.rejection_count || 0,
+            rejection_reason: d.rejection_reason || null
+          };
+        });
+        const sortedItems = sortVerificationItems(items);
+        const pendingCount = items.filter((i) => i.status === 'PENDING' || i.status === 'RE-UPLOADED').length;
+        return {
+          items: sortedItems,
+          total: count ?? sortedItems.length,
+          pending_count: pendingCount,
+          page: filters.page,
+          page_size: 25
+        };
       }
+    } catch {
+      /* proceed to localStorage fallback only if network request fails */
+    }
 
       // 2. Offline fallback: load from localStorage
       const all = loadLocalVerifications();
@@ -1133,8 +1005,7 @@ export const AdminVerificationAPI = {
         page: filters.page,
         page_size: 25
       };
-    }
-  },
+    },
 
   async getDocument(
     accessToken: string,
@@ -1423,16 +1294,17 @@ export const AdminVerificationAPI = {
 
   /**
    * Delete a student verification submission permanently:
-   * Removes from Supabase verifications table, cleans up storage files, and clears local queue.
+   * Executes a real DELETE query in Supabase, cleans up storage files,
+   * purges all matching entries from local caches, and resets any active cached session.
    */
   async deleteVerification(item: VerificationQueueItem, accessToken?: string): Promise<void> {
-    // 1. Delete image files from storage
+    // 1. Delete associated front and back ID card files from Supabase Storage / server storage
     await Promise.allSettled([
       deleteSupabaseStorageFile(item.front_image_url || item.front_data_url),
       deleteSupabaseStorageFile(item.back_image_url || item.back_data_url)
     ]);
 
-    // 2. Inform backend if endpoint exists
+    // 2. Call backend delete endpoint if accessible (FastAPI / Express)
     try {
       await fetch(`${verificationApiBaseUrl}/admin/verification/${item.id}`, {
         method: 'DELETE',
@@ -1442,35 +1314,61 @@ export const AdminVerificationAPI = {
         }
       });
     } catch {
-      /* ignore */
+      /* continue to database deletion */
     }
 
-    // 3. Delete from Supabase verifications table
-    try {
-      const orConditions: string[] = [];
-      if (item.id) orConditions.push(`id.eq.${item.id}`);
-      if (item.user_id) orConditions.push(`user_id.eq.${item.user_id}`);
-      if (item.student_id_code) orConditions.push(`student_id_code.eq.${item.student_id_code}`);
-      if (item.email) orConditions.push(`email.eq.${item.email}`);
+    // 3. Execute true DELETE query in Supabase verifications table
+    const orConditions: string[] = [];
+    if (item.id) orConditions.push(`id.eq.${item.id}`);
+    if (item.student_id_code) orConditions.push(`student_id_code.eq.${item.student_id_code}`);
+    if (item.user_id) orConditions.push(`user_id.eq.${item.user_id}`);
+    if (item.email) orConditions.push(`email.eq.${item.email}`);
 
-      if (orConditions.length > 0) {
-        await supabase.from('verifications').delete().or(orConditions.join(','));
+    if (orConditions.length > 0) {
+      const { error: dbError } = await supabase
+        .from('verifications')
+        .delete()
+        .or(orConditions.join(','));
+
+      if (dbError) {
+        throw new Error(`Database error deleting record: ${dbError.message} (${dbError.code || 'RLS_RESTRICTION'})`);
       }
-    } catch (err) {
-      console.warn('Supabase verification deletion error:', err);
     }
 
-    // 4. Remove from local queue
-    const all = loadLocalVerifications();
-    const filtered = all.filter(
-      (v) =>
-        String(v.id) !== String(item.id) &&
-        String(v.student_id_code) !== String(item.student_id_code) &&
-        (!item.email || v.email !== item.email)
-    );
-    saveLocalVerifications(filtered);
+    // 4. Remove any matching cached entries from localStorage so page reload never restores deleted items
+    const purgeMatches = (queueList: any[]) => {
+      if (!Array.isArray(queueList)) return [];
+      return queueList.filter((v: any) => {
+        const matchesId = item.id && (String(v.id) === String(item.id) || String(v.user_id) === String(item.id));
+        const matchesCode = item.student_id_code && String(v.student_id_code) === String(item.student_id_code);
+        const matchesEmail = item.email && v.email && v.email.toLowerCase() === item.email.toLowerCase();
+        return !(matchesId || matchesCode || matchesEmail);
+      });
+    };
 
-    // 5. Clean up cached verification status for that user
+    // Purge LOCAL_VERIFICATIONS_KEY (cpm_admin_verifications)
+    const localItems = loadLocalVerifications();
+    const updatedLocal = purgeMatches(localItems);
+    saveLocalVerifications(updatedLocal);
+
+    // Purge other queue cache keys
+    const queueCacheKeys = ['cpm_verifications', 'cpm_verification_queue'];
+    for (const key of queueCacheKeys) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const purged = purgeMatches(parsed);
+            localStorage.setItem(key, JSON.stringify(purged));
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Clean up cached verification status per user email and student id code
     if (item.email) {
       try {
         localStorage.removeItem(`cpm_verif_${item.email.toLowerCase()}`);
@@ -1478,11 +1376,45 @@ export const AdminVerificationAPI = {
         /* ignore */
       }
     }
+    if (item.student_id_code) {
+      try {
+        localStorage.removeItem(`cpm_verif_${item.student_id_code.toLowerCase()}`);
+      } catch {
+        /* ignore */
+      }
+    }
 
+    // Reset student session verification cache if deleted student is currently logged in
+    try {
+      const rawSession = localStorage.getItem('cpm_student_session');
+      if (rawSession) {
+        const parsed = JSON.parse(rawSession);
+        const matchesSession =
+          (item.student_id_code && String(parsed.id) === String(item.student_id_code)) ||
+          (item.id && String(parsed.id) === String(item.id)) ||
+          (item.email && parsed.email?.toLowerCase() === item.email.toLowerCase());
+
+        if (matchesSession) {
+          localStorage.setItem(
+            'cpm_student_session',
+            JSON.stringify({
+              ...parsed,
+              authState: 'unverified',
+              rejectionCount: 0,
+              rejectionReason: null
+            })
+          );
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 5. Dispatch live event
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('uvikart:verification_deleted', {
-          detail: { verificationId: item.id, student_id_code: item.student_id_code }
+          detail: { verificationId: item.id, student_id_code: item.student_id_code, email: item.email }
         })
       );
     }

@@ -403,7 +403,7 @@ export default function AdminVerificationPage({
   const handleDeleteVerification = async (item: VerificationQueueItem) => {
     const studentIdentifier = item.student_name || item.student_id_code || item.email || 'this student';
     const confirmed = window.confirm(
-      `Permanently delete verification submission for "${studentIdentifier}"?\n\nThis will remove the verification record from the queue and purge any uploaded front and back ID images from server storage.`
+      `Permanently delete verification submission for "${studentIdentifier}"?\n\nThis will remove the verification record from the database and purge any uploaded front and back ID images from server storage.`
     );
     if (!confirmed) return;
 
@@ -411,14 +411,16 @@ export default function AdminVerificationPage({
     setError('');
     try {
       await AdminVerificationAPI.deleteVerification(item, accessToken);
-      setNotice(`Verification record and uploaded files permanently deleted for ${studentIdentifier}.`);
-      if (selected && (selected.id === item.id || selected.user_id === item.user_id)) {
+      setNotice(`Verification record permanently deleted for ${studentIdentifier}.`);
+      if (selected && (selected.id === item.id || selected.user_id === item.user_id || selected.student_id_code === item.student_id_code)) {
         setSelected(null);
       }
       await refresh();
       onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete verification record.');
+      const msg = err instanceof Error ? err.message : 'Failed to delete verification record.';
+      setError(msg);
+      alert(`Deletion Error: ${msg}`);
     } finally {
       setDeletingId(null);
     }
@@ -614,19 +616,19 @@ export default function AdminVerificationPage({
             <p className="mt-1 text-xs text-slate-500">Try clearing your search query or switching status filters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto w-full">
             <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
               <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
                 <tr>
-                  <th className="px-4 py-3.5 font-bold">Student Name</th>
-                  <th className="px-4 py-3.5 font-bold">Student ID</th>
-                  <th className="px-4 py-3.5 font-bold">AK Referral Code</th>
-                  <th className="px-4 py-3.5 font-bold">Uploaded Document / Image Preview</th>
-                  <th className="px-4 py-3.5 font-bold">College / University</th>
-                  <th className="px-4 py-3.5 font-bold">Contact Details</th>
-                  <th className="px-4 py-3.5 font-bold">Submitted Date</th>
-                  <th className="px-4 py-3.5 font-bold">Status</th>
-                  <th className="px-4 py-3.5 font-bold text-center">Action</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap min-w-[180px]">Student Name</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[120px]">Student ID</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[130px]">AK Referral Code</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[240px]">Uploaded Document / Image Preview</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[160px]">College / University</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[150px]">Contact Details</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[130px]">Submitted Date</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[120px]">Status</th>
+                  <th className="px-5 py-3.5 font-bold whitespace-nowrap text-center min-w-[110px]">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -645,7 +647,7 @@ export default function AdminVerificationPage({
                       }`}
                     >
                       {/* 1. Student Name & Course */}
-                      <td className="px-4 py-3.5">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <div className="font-extrabold text-slate-900 text-sm">{item.student_name}</div>
                           {isReuploaded && (
@@ -658,14 +660,14 @@ export default function AdminVerificationPage({
                       </td>
 
                       {/* 2. Student ID */}
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className="font-mono font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 text-xs">
                           {studentIdDisplay}
                         </span>
                       </td>
 
                       {/* 3. AK Referral Code */}
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 text-xs">
                           {referralCodeDisplay}
                         </span>
@@ -682,7 +684,7 @@ export default function AdminVerificationPage({
                       </td>
 
                       {/* 6. Contact */}
-                      <td className="px-4 py-3.5 text-slate-600">
+                      <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">
                         <div className="font-semibold text-slate-900">{item.phone || '7004273758'}</div>
                         <div className="text-[11px] text-slate-400 truncate max-w-[160px]">{item.email || 'student@umu.ac.in'}</div>
                       </td>
@@ -693,7 +695,7 @@ export default function AdminVerificationPage({
                       </td>
 
                       {/* 8. Status */}
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ring-1 ${statusStyle(item.status)}`}>
                           {item.status === 'RE-UPLOADED' && <RotateCcw size={12} className="text-violet-700 shrink-0" />}
                           {item.status === 'APPROVED' && <CheckCircle2 size={12} className="shrink-0" />}
@@ -711,12 +713,12 @@ export default function AdminVerificationPage({
                       </td>
 
                       {/* 9. Action Button (Permanent Delete) */}
-                      <td className="px-4 py-3.5 text-center">
+                      <td className="px-5 py-3.5 text-center whitespace-nowrap">
                         <button
                           type="button"
                           disabled={deletingId === item.id}
                           onClick={() => void handleDeleteVerification(item)}
-                          className="rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 px-3 py-1.5 font-bold text-xs border border-rose-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                          className="rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 px-3.5 py-2 font-bold text-xs border border-rose-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer"
                           title="Permanently delete record and storage files"
                         >
                           {deletingId === item.id ? (

@@ -88,7 +88,10 @@ export default function StudentVerificationPage({
     setError('');
     try {
       const [current, recentNotifications] = await Promise.all([
-        StudentVerificationAPI.getMine(accessToken),
+        StudentVerificationAPI.getMine(accessToken, {
+          email: student?.email,
+          studentIdCode: student?.studentIdCode || student?.id
+        }),
         StudentVerificationAPI.getNotifications(accessToken, student?.studentIdCode || student?.email)
       ]);
       setVerification(current);

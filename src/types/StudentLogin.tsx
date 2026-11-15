@@ -1,7 +1,22 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { ShieldCheck, Mail, CheckCircle2, AlertCircle, RefreshCw, ArrowRight } from 'lucide-react';
+import {
+  ShieldCheck,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  ArrowRight,
+  KeyRound,
+  X,
+  Send,
+  Sparkles
+} from 'lucide-react';
 import { StudentProfile } from './types';
+import { INITIAL_STUDENT } from './mockData';
 
 export interface StudentLoginProps {
   onSuccess?: (studentData: {
@@ -46,30 +61,174 @@ export default function StudentLogin({
   onNavigateDashboard,
   showToast
 }: StudentLoginProps) {
+  // Login Form States
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loadingLogin, setLoadingLogin] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
-  const [loadingEmail, setLoadingEmail] = useState(false);
-  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [loginError, setLoginError] = useState('');
+
+  // Forgot Password Modal States
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1); // 1 = Request code, 2 = Verify code & set new password
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
 
   const displayToast = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setMessage({ text: msg, type });
     if (showToast) {
       showToast(msg, type);
     }
   };
 
   /**
-   * 1. Google OAuth Sign-In Trigger
+   * Helper: Process successful sign in and load isolated student profile
+   */
+  const processSuccessfulLogin = async (user: any, session: any) => {
+    const cleanEmail = (user?.email || email).trim().toLowerCase();
+
+    // Query Supabase verifications table strictly for this user (multi-user isolation)
+    let verifRecord: any = null;
+    try {
+      const { data: rows } = await supabase
+        .from('verifications')
+        .select('*')
+        .or(`email.ilike.${cleanEmail},email.eq.${cleanEmail},user_id.eq.${user?.id || ''}`)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (rows && rows.length > 0) {
+        verifRecord = rows[0];
+      }
+    } catch (dbErr) {
+      console.warn('Verifications query notice:', dbErr);
+    }
+
+    const isVerified = verifRecord?.status === 'APPROVED' || verifRecord?.status === 'VERIFIED';
+    const randomSuffix = user?.id ? user.id.slice(0, 4).toUpperCase() : Math.floor(1000 + Math.random() * 9000);
+    const studentId = verifRecord?.student_id_code || `STU-2026-${randomSuffix}`;
+    const referralCode = verifRecord?.referral_code || verifRecord?.student_id_code || studentId;
+    const studentName = verifRecord?.student_name || user?.user_metadata?.full_name || user?.user_metadata?.name || cleanEmail.split('@')[0];
+    const college = verifRecord?.college || user?.user_metadata?.college || 'University Student';
+    const course = verifRecord?.course || user?.user_metadata?.course || 'Degree Program';
+    const phone = verifRecord?.phone || '';
+    const rejCount = Number(verifRecord?.rejection_count || 0);
+
+    const studentProfile: Partial<StudentProfile> = {
+      ...INITIAL_STUDENT,
+      id: studentId,
+      fullName: studentName,
+      email: cleanEmail,
+      mobile: phone,
+      collegeName: college,
+      department: course,
+      referralCode: referralCode,
+      accessToken: session?.access_token || 'supabase-token',
+      authState: isVerified
+        ? 'verified'
+        : verifRecord?.status === 'BLOCKED' || rejCount >= 2
+        ? 'verification_blocked'
+        : verifRecord?.status === 'REJECTED'
+        ? 'verification_rejected'
+        : verifRecord?.status === 'RE-UPLOADED'
+        ? 'verification_pending'
+        : verifRecord?.status === 'PENDING'
+        ? 'verification_pending'
+        : 'verification_pending',
+      rejectionCount: rejCount,
+      rejectionReason: verifRecord?.rejection_reason || undefined,
+      role: 'student'
+    };
+
+    // Save isolated session in localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('cpm_student_session', JSON.stringify(studentProfile));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    displayToast(`Welcome back, ${studentName}! Logged in successfully.`, 'success');
+
+    if (onSuccess) {
+      onSuccess({ user, session, studentProfile });
+    } else if (onNavigateDashboard) {
+      onNavigateDashboard();
+    }
+  };
+
+  /**
+   * 1. Email + Password Sign In via Supabase Auth
+   */
+  const handleEmailPasswordSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      const err = 'Please enter a valid student email address.';
+      setLoginError(err);
+      displayToast(err, 'error');
+      return;
+    }
+
+    if (!password) {
+      const err = 'Please enter your account password.';
+      setLoginError(err);
+      displayToast(err, 'error');
+      return;
+    }
+
+    setLoadingLogin(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: password
+      });
+
+      if (error) {
+        let msg = error.message;
+        if (msg.toLowerCase().includes('invalid login credentials')) {
+          msg = 'Incorrect email or password. Please check your credentials or reset your password.';
+        } else if (msg.toLowerCase().includes('email not confirmed')) {
+          msg = 'Your email address has not been confirmed yet. Please verify your email first.';
+        }
+        setLoginError(msg);
+        displayToast(msg, 'error');
+        setLoadingLogin(false);
+        return;
+      }
+
+      if (data?.session && data?.user) {
+        await processSuccessfulLogin(data.user, data.session);
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Login failed. Please check your internet connection.';
+      setLoginError(msg);
+      displayToast(msg, 'error');
+    } finally {
+      setLoadingLogin(false);
+    }
+  };
+
+  /**
+   * 2. Google OAuth Sign-In
    */
   const handleGoogleSignIn = async () => {
     setLoadingGoogle(true);
-    setMessage(null);
+    setLoginError('');
 
     try {
       const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://uvikart.com';
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: redirectUrl,
@@ -81,153 +240,139 @@ export default function StudentLogin({
       });
 
       if (error) {
-        console.warn('Google OAuth error:', error.message);
         displayToast(error.message, 'error');
+        setLoginError(error.message);
         setLoadingGoogle(false);
-        return;
       }
-      // Browser will navigate to Google authentication screen
     } catch (err: any) {
-      const msg = err?.message || 'Failed to initiate Google Sign-In. Please try again.';
+      const msg = err?.message || 'Failed to initiate Google Sign-In.';
       displayToast(msg, 'error');
       setLoadingGoogle(false);
     }
   };
 
   /**
-   * 2. Request Email Sign-In Code / Magic Link via Supabase Auth
+   * 3. Forgot Password - Step 1: Send Password Reset Code/Email
    */
-  const handleRequestEmailOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const cleanEmail = email.trim().toLowerCase();
+  const handleRequestPasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotSuccess('');
+
+    const cleanEmail = (forgotEmail || email).trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
-      displayToast('Please enter a valid student email address.', 'error');
+      setForgotError('Please enter a valid registered email address.');
       return;
     }
 
-    setLoadingEmail(true);
-    setMessage(null);
+    setForgotLoading(true);
 
     try {
       const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://uvikart.com';
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email: cleanEmail,
-        options: {
-          emailRedirectTo: redirectUrl
-        }
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: redirectUrl
       });
 
       if (error) {
-        console.warn('Email OTP error:', error.message);
+        setForgotError(error.message);
         displayToast(error.message, 'error');
-        setLoadingEmail(false);
+        setForgotLoading(false);
         return;
       }
 
-      setOtpSent(true);
-      displayToast(`Sign-in code sent to ${cleanEmail}! Please check your email inbox.`, 'success');
+      setForgotSuccess(`Password reset code dispatched to ${cleanEmail}. Check your inbox!`);
+      displayToast(`Password reset code sent to ${cleanEmail}!`, 'success');
+      setForgotStep(2);
     } catch (err: any) {
-      const msg = err?.message || 'Failed to send sign-in code to your email.';
+      const msg = err?.message || 'Unable to request password reset code. Please try again.';
+      setForgotError(msg);
       displayToast(msg, 'error');
     } finally {
-      setLoadingEmail(false);
+      setForgotLoading(false);
     }
   };
 
   /**
-   * 3. Verify Email One-Time Code via Supabase Auth & Query Database
+   * 4. Forgot Password - Step 2: Verify OTP & Update Password
    */
-  const handleVerifyEmailOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const code = otp.trim();
-    if (!code) {
-      displayToast('Please enter the 6-digit one-time code sent to your email.', 'error');
+  const handleVerifyResetAndSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError('');
+    setForgotSuccess('');
+
+    const cleanEmail = (forgotEmail || email).trim().toLowerCase();
+    const token = forgotOtp.trim();
+
+    if (!token || token.length < 6) {
+      setForgotError('Please enter the 6-digit verification code.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setForgotError('New password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setForgotError('New passwords do not match. Please re-enter.');
       return;
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    setLoadingEmail(true);
-    setMessage(null);
+    setForgotLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
+      // 1. Verify OTP with type: 'recovery'
+      let verifyResult = await supabase.auth.verifyOtp({
         email: cleanEmail,
-        token: code,
-        type: 'email'
+        token: token,
+        type: 'recovery'
       });
 
-      if (error) {
-        console.warn('Supabase verifyOtp error:', error.message);
-        displayToast(error.message, 'error');
-        setLoadingEmail(false);
+      // Fallback to 'email' if project OTP template is standard email
+      if (verifyResult.error) {
+        verifyResult = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: token,
+          type: 'email'
+        });
+      }
+
+      if (verifyResult.error) {
+        setForgotError('Invalid or expired verification code. Please check and try again.');
+        displayToast('Invalid or expired verification code.', 'error');
+        setForgotLoading(false);
         return;
       }
 
-      const session = data?.session;
-      const user = data?.user || session?.user;
+      // 2. Update user's password securely
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
 
-      // Query Supabase verifications table matching email
-      let verifRecord: any = null;
-      try {
-        const { data: rows } = await supabase
-          .from('verifications')
-          .select('*')
-          .or(`email.ilike.${cleanEmail},email.eq.${cleanEmail},user_id.eq.${user?.id || ''}`)
-          .order('updated_at', { ascending: false })
-          .limit(1);
-
-        if (rows && rows.length > 0) {
-          verifRecord = rows[0];
-        }
-      } catch (dbErr) {
-        console.warn('Verifications table lookup error:', dbErr);
+      if (updateError) {
+        setForgotError(updateError.message);
+        displayToast(updateError.message, 'error');
+        setForgotLoading(false);
+        return;
       }
 
-      const isVerified = verifRecord?.status === 'APPROVED' || verifRecord?.status === 'VERIFIED';
-      const studentName = verifRecord?.student_name || user?.user_metadata?.full_name || user?.user_metadata?.name || 'Mayank Kumar';
-      const studentId = verifRecord?.student_id_code || (user?.id ? `STU-2026-${user.id.slice(0, 4).toUpperCase()}` : 'STU-2026-7611');
-      const referralCode = verifRecord?.referral_code || 'A7K2';
-
-      displayToast(`Welcome back, ${studentName}! Authenticated successfully.`, 'success');
-
-      const studentProfile: Partial<StudentProfile> = {
-        id: studentId,
-        fullName: studentName,
-        email: cleanEmail,
-        mobile: verifRecord?.phone || '+91 7004273758',
-        collegeName: verifRecord?.college || 'Usha Martin University',
-        department: verifRecord?.course || 'B.Tech Computer Science',
-        referralCode: referralCode,
-        accessToken: session?.access_token || 'supabase-token',
-        authState: isVerified
-          ? 'verified'
-          : verifRecord?.status === 'RE-UPLOADED'
-          ? 'verification_pending'
-          : verifRecord?.status === 'PENDING'
-          ? 'verification_pending'
-          : verifRecord?.status === 'REJECTED'
-          ? 'verification_rejected'
-          : verifRecord?.status === 'BLOCKED'
-          ? 'verification_blocked'
-          : 'verified',
-        role: 'student'
-      };
-
-      if (onSuccess) {
-        onSuccess({ user, session, studentProfile });
-      } else if (onNavigateDashboard) {
-        onNavigateDashboard();
-      }
+      displayToast('Password updated successfully! You can now log in with your new password.', 'success');
+      setShowForgotModal(false);
+      setForgotStep(1);
+      setForgotOtp('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPassword('');
+      setEmail(cleanEmail);
     } catch (err: any) {
-      const msg = err?.message || 'Verification failed. Please check the code and try again.';
+      const msg = err?.message || 'Failed to update password. Please try again.';
+      setForgotError(msg);
       displayToast(msg, 'error');
     } finally {
-      setLoadingEmail(false);
+      setForgotLoading(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto py-12 px-4">
+    <div className="max-w-md mx-auto py-12 px-4 relative">
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
@@ -238,58 +383,26 @@ export default function StudentLogin({
               Secure Academic Access
             </span>
           </div>
-          <h1 className="text-xl font-bold text-slate-900">Student Login</h1>
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900">Student Login</h1>
           <p className="text-xs text-slate-600 mt-1">
-            Sign in with your Google account or email address to access your verified student portal.
+            Sign in with your email address and password to access your verified student portal.
           </p>
         </div>
 
-        {/* 1. Primary "Continue with Google" Button */}
-        <div>
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={loadingGoogle || loadingEmail}
-            className="w-full rounded-2xl border border-slate-300 bg-white py-3 px-4 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-60 transition-all flex items-center justify-center gap-3 active:scale-[0.99]"
+        {/* Login Error Alert */}
+        {loginError && (
+          <div
+            role="alert"
+            className="p-3.5 rounded-2xl border border-rose-200 bg-rose-50 text-rose-800 text-xs flex items-start gap-2.5"
           >
-            {loadingGoogle ? (
-              <>
-                <RefreshCw size={17} className="animate-spin text-indigo-600" />
-                <span>Connecting to Google…</span>
-              </>
-            ) : (
-              <>
-                <GoogleIcon />
-                <span>Continue with Google</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* 2. Visual Divider */}
-        <div className="relative my-2">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200" />
+            <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+            <span className="leading-relaxed font-medium">{loginError}</span>
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-white px-3 font-semibold text-slate-400">
-              or sign in with email
-            </span>
-          </div>
-        </div>
+        )}
 
-        {/* 3. Email Authentication Form */}
-        <form
-          onSubmit={(e) => {
-            if (otpSent) {
-              void handleVerifyEmailOtp(e);
-            } else {
-              void handleRequestEmailOtp(e);
-            }
-          }}
-          className="space-y-4"
-        >
-          {/* Email Address Input */}
+        {/* 1. Email + Password Login Form */}
+        <form onSubmit={handleEmailPasswordSignIn} className="space-y-4">
+          {/* Email Address */}
           <div>
             <label htmlFor="student-email" className="block text-xs font-bold text-slate-700 mb-1">
               Student Email Address
@@ -302,126 +415,293 @@ export default function StudentLogin({
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  setMessage(null);
+                  setLoginError('');
                 }}
-                disabled={otpSent || loadingEmail || loadingGoogle}
+                disabled={loadingLogin || loadingGoogle}
                 placeholder="e.g. student@umu.ac.in or you@gmail.com"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-500"
+                className="w-full rounded-xl border border-slate-300 pl-3.5 pr-10 py-2.5 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 outline-none transition-all"
               />
               <Mail size={16} className="absolute right-3.5 top-3 text-slate-400 pointer-events-none" />
             </div>
-
-            {otpSent && (
-              <p className="text-[11px] text-slate-500 mt-1.5 flex items-center justify-between">
-                <span>Code sent to: <strong className="text-slate-800">{email}</strong></span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtpSent(false);
-                    setOtp('');
-                    setMessage(null);
-                  }}
-                  className="text-indigo-600 font-bold hover:underline"
-                >
-                  Change email
-                </button>
-              </p>
-            )}
           </div>
 
-          {/* OTP Code Input (when email code is dispatched) */}
-          {otpSent && (
-            <div className="space-y-1">
-              <label htmlFor="student-otp" className="block text-xs font-bold text-slate-700">
-                Email One-Time Code
+          {/* Password with Forgot Password link */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="student-password" className="text-xs font-bold text-slate-700">
+                Password
               </label>
-              <input
-                id="student-otp"
-                type="text"
-                required
-                minLength={4}
-                maxLength={8}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                autoFocus
-                value={otp}
-                onChange={(e) => {
-                  setOtp(e.target.value);
-                  setMessage(null);
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotEmail(email);
+                  setForgotError('');
+                  setForgotSuccess('');
+                  setForgotStep(1);
+                  setShowForgotModal(true);
                 }}
-                disabled={loadingEmail}
-                placeholder="Enter 6-digit email code"
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-medium tracking-widest text-slate-900 placeholder:tracking-normal placeholder:text-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50"
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors"
+              >
+                Forgot Password?
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                id="student-password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setLoginError('');
+                }}
+                disabled={loadingLogin || loadingGoogle}
+                placeholder="Enter your account password"
+                className="w-full rounded-xl border border-slate-300 pl-3.5 pr-10 py-2.5 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 outline-none transition-all"
               />
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-500">Didn't receive code?</span>
-                <button
-                  type="button"
-                  disabled={loadingEmail}
-                  onClick={() => void handleRequestEmailOtp()}
-                  className="text-[11px] font-bold text-indigo-600 hover:underline disabled:opacity-50"
-                >
-                  Resend code
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-2.5 p-1 text-slate-400 hover:text-slate-700 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
-          )}
+          </div>
 
-          {/* Feedback message banner */}
-          {message && (
-            <div
-              role="alert"
-              className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
-                message.type === 'error'
-                  ? 'bg-rose-50 border-rose-200 text-rose-800'
-                  : message.type === 'success'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-indigo-50 border-indigo-200 text-indigo-800'
-              }`}
-            >
-              {message.type === 'error' ? (
-                <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
-              ) : (
-                <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
-              )}
-              <span className="leading-relaxed">{message.text}</span>
-            </div>
-          )}
-
-          {/* Action button */}
+          {/* Sign In Button */}
           <button
             type="submit"
-            disabled={loadingEmail || loadingGoogle}
-            className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-sm hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-300 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+            disabled={loadingLogin || loadingGoogle || !email || !password}
+            className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-extrabold py-3 px-4 text-sm shadow-md flex items-center justify-center gap-2 transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loadingEmail ? (
+            {loadingLogin ? (
               <>
-                <RefreshCw size={16} className="animate-spin" />
-                <span>Please wait…</span>
-              </>
-            ) : otpSent ? (
-              <>
-                <span>Verify code & Enter Dashboard</span>
-                <ArrowRight size={16} />
+                <RefreshCw size={16} className="animate-spin text-white" />
+                <span>Signing in…</span>
               </>
             ) : (
-              <span>Send Sign-In Code</span>
+              <>
+                <span>Sign In</span>
+                <ArrowRight size={16} />
+              </>
             )}
           </button>
-
-          {/* Footer link to Sign Up */}
-          <p className="text-center text-xs text-slate-500 pt-1">
-            New student?{' '}
-            <button
-              type="button"
-              onClick={onNavigateSignup}
-              className="font-bold text-indigo-700 hover:underline"
-            >
-              Create an account
-            </button>
-          </p>
         </form>
+
+        {/* 2. Visual Divider */}
+        <div className="relative my-3">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-3 font-semibold text-slate-400">
+              or continue with
+            </span>
+          </div>
+        </div>
+
+        {/* 3. Google OAuth Button */}
+        <div>
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={loadingGoogle || loadingLogin}
+            className="w-full rounded-2xl border border-slate-300 bg-white py-2.5 px-4 text-sm font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-60 transition-all flex items-center justify-center gap-3 active:scale-[0.99]"
+          >
+            {loadingGoogle ? (
+              <>
+                <RefreshCw size={16} className="animate-spin text-indigo-600" />
+                <span>Connecting to Google…</span>
+              </>
+            ) : (
+              <>
+                <GoogleIcon />
+                <span>Continue with Google</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Card Footer: Navigation to Signup */}
+        <div className="pt-4 border-t border-slate-100 text-center text-xs text-slate-600">
+          <span>New student?</span>{' '}
+          <button
+            type="button"
+            onClick={onNavigateSignup}
+            className="font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors ml-1"
+          >
+            Create an account
+          </button>
+        </div>
       </div>
+
+      {/* 4. Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 sm:p-7 relative space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-xl bg-purple-50 text-purple-700">
+                  <KeyRound size={18} />
+                </span>
+                <h3 className="font-extrabold text-base text-slate-900">Reset Password</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {forgotError && (
+              <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-xs flex items-start gap-2">
+                <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                <span className="font-medium leading-relaxed">{forgotError}</span>
+              </div>
+            )}
+
+            {forgotSuccess && (
+              <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs flex items-start gap-2">
+                <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                <span className="font-medium leading-relaxed">{forgotSuccess}</span>
+              </div>
+            )}
+
+            {forgotStep === 1 ? (
+              <form onSubmit={handleRequestPasswordReset} className="space-y-4">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Enter your registered student email address. We will send a 6-digit verification code to reset your password.
+                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      required
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      placeholder="student@umu.ac.in"
+                      className="w-full rounded-xl border border-slate-300 pl-3.5 pr-10 py-2.5 text-sm text-slate-900 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 outline-none"
+                    />
+                    <Mail size={16} className="absolute right-3.5 top-3 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={forgotLoading || !forgotEmail}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {forgotLoading ? (
+                      <RefreshCw size={13} className="animate-spin" />
+                    ) : (
+                      <Send size={13} />
+                    )}
+                    <span>Send Reset Code</span>
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyResetAndSetPassword} className="space-y-3.5">
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Enter the 6-digit code received at <strong className="text-slate-800">{forgotEmail}</strong> and your new password.
+                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    6-Digit Verification Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={forgotOtp}
+                    onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ''))}
+                    placeholder="123456"
+                    className="w-full font-mono text-center tracking-widest text-lg font-bold rounded-xl border border-slate-300 py-2 text-slate-900 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 6 characters"
+                      className="w-full rounded-xl border border-slate-300 pl-3.5 pr-10 py-2.5 text-sm text-slate-900 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-2.5 p-1 text-slate-400 hover:text-slate-700 transition-colors"
+                    >
+                      {showNewPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep(1)}
+                    className="text-xs text-slate-500 hover:text-purple-700 underline"
+                  >
+                    &larr; Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={forgotLoading || !forgotOtp || !newPassword || !confirmNewPassword}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {forgotLoading ? (
+                      <RefreshCw size={13} className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={13} />
+                    )}
+                    <span>Update Password</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

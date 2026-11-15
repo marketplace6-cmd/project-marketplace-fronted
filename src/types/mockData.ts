@@ -59,14 +59,14 @@ export const INITIAL_PROJECTS: ProjectDTO[] = [
   }
 ];
 
-// Default verified student state for Uvikart marketplace
+// Default student state for Uvikart marketplace (isolated per user)
 export const INITIAL_STUDENT: StudentProfile = {
-  id: 'STU-2026-0001',
-  fullName: 'Mayank Kumar',
-  mobile: '+91 98765 43210',
-  email: 'mayank.kumar@student.umu.ac.in',
-  collegeName: 'Usha Martin University',
-  referralCode: 'A7K2',
+  id: '',
+  fullName: '',
+  mobile: '',
+  email: '',
+  collegeName: '',
+  referralCode: '',
   authState: 'logged_out',
   role: 'student',
   idDocumentName: '',

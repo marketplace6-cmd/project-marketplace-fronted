@@ -166,8 +166,8 @@ export default function StudentReferralPage({
   onLogin,
   studentId = 'STU-2026-0001',
   studentName = 'Mayank Kumar',
-  studentMobile = '7004273758',
-  referralCode = 'A7K2',
+  studentMobile = '',
+  referralCode = '',
   onToast
 }: StudentReferralPageProps) {
   const [dashboard, setDashboard] = useState<StudentReferralDashboard>(() => {
@@ -211,8 +211,13 @@ export default function StudentReferralPage({
     const loadLiveReferralData = async () => {
       setLoading(true);
       setError('');
-      const effectiveCode = referralCode || 'A7K2';
-      const effectiveId = studentId || 'STU-2026-0001';
+      const effectiveCode = referralCode || studentId || '';
+      const effectiveId = studentId || referralCode || '';
+
+      if (!effectiveCode && !effectiveId) {
+        setLoading(false);
+        return;
+      }
 
       try {
         // 1. Backend API attempt (if accessToken available)
@@ -288,6 +293,10 @@ export default function StudentReferralPage({
         // (a) Level 1: Direct Classmates from verifications
         for (const v of verifRows) {
           const stdId = v.student_id_code || (v.user_id ? `STU-2026-${String(v.user_id).padStart(4, '0')}` : `STU-2026-${String(v.id).padStart(4, '0')}`);
+          // Ensure student does not see themselves as their own referral
+          if (String(stdId) === String(effectiveId) || (v.email && studentEmail && v.email.toLowerCase() === studentEmail.toLowerCase())) {
+            continue;
+          }
           const matchingOrder = orderRows.find(
             (o) => String(o.student_id) === String(stdId) || (o.email && o.email === v.email) || (o.phone && o.phone === v.phone)
           );
@@ -520,7 +529,7 @@ export default function StudentReferralPage({
 
     // Realtime Supabase Subscription: Auto-update on new referrals, orders, verifications, or payouts
     const channel = supabase
-      .channel(`uvikart-referral-live-${referralCode || 'A7K2'}`)
+      .channel(`uvikart-referral-live-${referralCode || studentId || 'isolated'}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
         void loadLiveReferralData();
       })

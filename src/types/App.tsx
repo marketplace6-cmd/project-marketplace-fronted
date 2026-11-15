@@ -27,6 +27,7 @@ import { ReferralApiError, StudentReferralAPI } from './referralService';
 import { supabase } from '../supabaseClient';
 import StudentLogin from './StudentLogin';
 import StudentSignup from './StudentSignup';
+import ProfilePage from './ProfilePage';
 
 type PageRoute =
   | 'home'
@@ -36,6 +37,7 @@ type PageRoute =
   | 'how-it-works'
   | 'login'
   | 'signup'
+  | 'profile'
   | 'admin-login'
   | 'admin-change-password'
   | 'verification'
@@ -230,7 +232,7 @@ export default function App() {
 
   const currentStudentName = student.fullName || 'Mayank Kumar';
   const currentStudentId = (student.id && student.id !== 'STU-000-000') ? student.id : 'STU-2026-0001';
-  const currentAkReferralCode = student.referralCode || 'A7K2';
+  const currentAkReferralCode = student.referralCode || student.id || '';
   const currentCollege = student.collegeName || 'Usha Martin University';
   const currentReferralLink = typeof window !== 'undefined'
     ? `${window.location.origin}/register?ref=${currentAkReferralCode}`
@@ -573,11 +575,12 @@ export default function App() {
 
         const verif = verifRows?.[0];
         const isVerified = verif?.status === 'APPROVED' || verif?.status === 'VERIFIED';
-        const studentId = verif?.student_id_code || (user.id ? `STU-2026-${user.id.slice(0, 4).toUpperCase()}` : 'STU-2026-7611');
-        const studentName = verif?.student_name || user.user_metadata?.full_name || user.user_metadata?.name || 'Mayank Kumar';
-        const referralCode = verif?.referral_code || 'A7K2';
-        const college = verif?.college || 'Usha Martin University';
-        const course = verif?.course || 'B.Tech Computer Science';
+        const randomSuffix = user.id ? user.id.slice(0, 4).toUpperCase() : Math.floor(1000 + Math.random() * 9000);
+        const studentId = verif?.student_id_code || `STU-2026-${randomSuffix}`;
+        const studentName = verif?.student_name || user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0];
+        const referralCode = verif?.referral_code || verif?.student_id_code || studentId;
+        const college = verif?.college || user.user_metadata?.college || 'University Student';
+        const course = verif?.course || user.user_metadata?.course || 'Degree Program';
         const status = verif?.status;
         const rejCount = Number(verif?.rejection_count || 0);
 
@@ -586,7 +589,7 @@ export default function App() {
           id: studentId,
           fullName: studentName,
           email: email,
-          mobile: verif?.phone || prev.mobile || '+91 7004273758',
+          mobile: verif?.phone || prev.mobile || '',
           collegeName: college,
           department: course,
           referralCode: referralCode,
@@ -761,9 +764,10 @@ export default function App() {
         }
 
         const isVerified = verifRecord?.status === 'APPROVED' || verifRecord?.status === 'VERIFIED';
-        const studentName = verifRecord?.student_name || user?.user_metadata?.full_name || user?.user_metadata?.name || student.fullName || 'Mayank Kumar';
-        const studentId = verifRecord?.student_id_code || (user?.id ? `STU-2026-${user.id.slice(0, 4).toUpperCase()}` : 'STU-2026-7611');
-        const referralCode = verifRecord?.referral_code || 'A7K2';
+        const randomSuffix = user?.id ? user.id.slice(0, 4).toUpperCase() : Math.floor(1000 + Math.random() * 9000);
+        const studentId = verifRecord?.student_id_code || `STU-2026-${randomSuffix}`;
+        const studentName = verifRecord?.student_name || user?.user_metadata?.full_name || user?.user_metadata?.name || cleanEmail.split('@')[0];
+        const referralCode = verifRecord?.referral_code || verifRecord?.student_id_code || studentId;
 
         setStudent({
           ...INITIAL_STUDENT,
@@ -771,9 +775,9 @@ export default function App() {
           accessToken: session?.access_token || 'supabase-token',
           fullName: studentName,
           email: cleanEmail,
-          mobile: verifRecord?.phone || '+91 7004273758',
-          collegeName: verifRecord?.college || student.collegeName || 'Usha Martin University',
-          department: verifRecord?.course || 'B.Tech Computer Science',
+          mobile: verifRecord?.phone || '',
+          collegeName: verifRecord?.college || user?.user_metadata?.college || 'University Student',
+          department: verifRecord?.course || user?.user_metadata?.course || 'Degree Program',
           referralCode: referralCode,
           authState: isVerified
             ? 'verified'
@@ -1878,6 +1882,18 @@ export default function App() {
       );
     }
 
+    if (mode === 'profile') {
+      return (
+        <ProfilePage
+          student={student}
+          onUpdateProfile={(updated) => setStudent((prev) => ({ ...prev, ...updated }))}
+          onNavigateVerification={() => navigate('verification')}
+          onNavigateReferrals={() => setShareEarnModalOpen(true)}
+          showToast={showToast}
+        />
+      );
+    }
+
     return null;
   };
 
@@ -2331,6 +2347,11 @@ export default function App() {
             <button
               onClick={async () => {
                 let sessionRevoked = !student.accessToken;
+                try {
+                  await supabase.auth.signOut();
+                } catch {
+                  /* ignore */
+                }
                 if (student.accessToken) {
                   try {
                     await StudentAuthAPI.logout(student.accessToken);
@@ -2533,10 +2554,10 @@ export default function App() {
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                   <div className="text-xs font-semibold text-slate-500">Mobile & Email</div>
                   <div className="font-medium text-slate-800 text-xs mt-1 truncate">
-                    {student.mobile || '+91 98765 43210'}
+                    {student.mobile || '—'}
                   </div>
                   <div className="text-xs text-slate-500 truncate">
-                    {student.email || 'mayank.kumar@student.umu.ac.in'}
+                    {student.email || '—'}
                   </div>
                 </div>
               </div>

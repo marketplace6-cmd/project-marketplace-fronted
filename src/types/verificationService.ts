@@ -254,25 +254,30 @@ export function sortVerificationItems(items: VerificationQueueItem[]): Verificat
   });
 }
 
-function getLocalStudentVerification(): StudentVerificationStatus | null {
+function getLocalStudentVerification(userKey?: string): StudentVerificationStatus | null {
   try {
-    const raw = localStorage.getItem(LOCAL_STUDENT_VERIFICATION_KEY);
+    const key = userKey ? `cpm_verif_${userKey.toLowerCase()}` : LOCAL_STUDENT_VERIFICATION_KEY;
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function saveLocalStudentVerification(data: StudentVerificationStatus): void {
+function saveLocalStudentVerification(data: StudentVerificationStatus, userKey?: string): void {
   try {
-    localStorage.setItem(LOCAL_STUDENT_VERIFICATION_KEY, JSON.stringify(data));
+    const key = userKey ? `cpm_verif_${userKey.toLowerCase()}` : LOCAL_STUDENT_VERIFICATION_KEY;
+    localStorage.setItem(key, JSON.stringify(data));
   } catch {
     /* ignore */
   }
 }
 
 export const StudentVerificationAPI = {
-  async getMine(accessToken: string): Promise<StudentVerificationStatus | null> {
+  async getMine(
+    accessToken: string,
+    userIdentifier?: { email?: string; userId?: string | number; studentIdCode?: string }
+  ): Promise<StudentVerificationStatus | null> {
     try {
       const data = await request('/verification/me', accessToken);
       if (data === null) return null;
@@ -280,14 +285,36 @@ export const StudentVerificationAPI = {
       return data;
     } catch {
       try {
-        const { data } = await supabase
-          .from('verifications')
-          .select('*')
-          .order('id', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // Resolve user identifier
+        let targetEmail = userIdentifier?.email?.toLowerCase().trim();
+        let targetIdCode = userIdentifier?.studentIdCode?.trim();
+        let targetUserId = userIdentifier?.userId;
+
+        if (!targetEmail && !targetIdCode && !targetUserId) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          targetEmail = sessionData?.session?.user?.email?.toLowerCase().trim();
+          targetUserId = sessionData?.session?.user?.id;
+        }
+
+        // If no user context exists, do not leak another student's record
+        if (!targetEmail && !targetIdCode && !targetUserId) {
+          return null;
+        }
+
+        let sbQuery = supabase.from('verifications').select('*');
+        if (targetEmail && targetIdCode) {
+          sbQuery = sbQuery.or(`email.eq.${targetEmail},email.ilike.${targetEmail},student_id_code.eq.${targetIdCode}`);
+        } else if (targetEmail) {
+          sbQuery = sbQuery.or(`email.eq.${targetEmail},email.ilike.${targetEmail}`);
+        } else if (targetIdCode) {
+          sbQuery = sbQuery.eq('student_id_code', targetIdCode);
+        } else if (targetUserId) {
+          sbQuery = sbQuery.eq('user_id', targetUserId);
+        }
+
+        const { data } = await sbQuery.order('updated_at', { ascending: false }).limit(1).maybeSingle();
         if (data) {
-          return {
+          const statusResult: StudentVerificationStatus = {
             id: Number(data.id),
             status: data.status,
             payment_phone: data.payment_phone || data.phone || '',
@@ -302,11 +329,13 @@ export const StudentVerificationAPI = {
             email: data.email || null,
             phone: data.phone || data.payment_phone || ''
           };
+          saveLocalStudentVerification(statusResult, targetEmail || targetIdCode);
+          return statusResult;
         }
       } catch {
         /* fallback */
       }
-      return getLocalStudentVerification();
+      return getLocalStudentVerification(userIdentifier?.email || userIdentifier?.studentIdCode);
     }
   },
 

@@ -67,4 +67,37 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_email ON public.notifications(email);
 
+-- Student Users and Authentication Table (Section 7)
+CREATE TABLE IF NOT EXISTS public.users (
+  id BIGSERIAL PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  college TEXT NOT NULL,
+  course TEXT NOT NULL,
+  email TEXT UNIQUE,
+  phone TEXT UNIQUE,
+  password_hash TEXT NOT NULL,
+  is_verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
+CREATE INDEX IF NOT EXISTS idx_users_phone ON public.users(phone);
+
+-- One-Time Password (OTP) Verification Records Table (Section 5 & 7)
+CREATE TABLE IF NOT EXISTS public.otp_verifications (
+  id BIGSERIAL PRIMARY KEY,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL, -- 'email' or 'phone'
+  otp_code_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  attempts INTEGER DEFAULT 0,
+  is_verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_otp_verifications_contact ON public.otp_verifications(contact);
+CREATE INDEX IF NOT EXISTS idx_otp_verifications_expires_at ON public.otp_verifications(expires_at);
+
 

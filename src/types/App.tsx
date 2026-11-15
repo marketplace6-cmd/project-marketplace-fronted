@@ -26,6 +26,7 @@ import StudentReferralPage from './StudentReferralPage';
 import { ReferralApiError, StudentReferralAPI } from './referralService';
 import { supabase } from '../supabaseClient';
 import StudentLogin from './StudentLogin';
+import StudentSignup from './StudentSignup';
 
 type PageRoute =
   | 'home'
@@ -1856,93 +1857,28 @@ export default function App() {
       );
     }
 
-    return (
-      <div className="max-w-md mx-auto py-12 px-4">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (studentOtpRequested) void verifyStudentOtp(mode);
-            else void requestStudentOtp(mode);
+    if (mode === 'signup') {
+      return (
+        <StudentSignup
+          showToast={showToast}
+          referralCode={referralCodeFromUrl}
+          onNavigateLogin={() => navigate('login')}
+          onNavigateDashboard={() => navigate('dashboard')}
+          onSuccess={({ studentProfile }) => {
+            if (studentProfile) {
+              setStudent((prev) => ({
+                ...prev,
+                ...studentProfile,
+                role: 'student'
+              }));
+            }
+            navigate('verification');
           }}
-          className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5"
-        >
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">
-              {mode === 'login' ? 'Student Login' : 'Create Student Account'}
-            </h1>
-            <p className="text-xs text-slate-600 mt-1">
-              {mode === 'login'
-                ? 'Sign in with a one-time code sent to your registered phone.'
-                : 'Create your student profile, then submit your student ID for verification.'}
-            </p>
-          </div>
+        />
+      );
+    }
 
-          {mode === 'signup' && (
-            <>
-              <label className="block text-xs font-bold text-slate-700">Full Name
-              <input
-                type="text"
-                required
-                minLength={2}
-                maxLength={255}
-                value={studentSignupName}
-                onChange={(event) => setStudentSignupName(event.target.value)}
-                placeholder="e.g. Rahul Kumar"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal"
-              />
-              </label>
-              <label className="block text-xs font-bold text-slate-700">College / University
-                <input required minLength={2} maxLength={255} value={studentSignupCollege} onChange={(event) => setStudentSignupCollege(event.target.value)} placeholder="Your institute" className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal" />
-              </label>
-              <label className="block text-xs font-bold text-slate-700">Course / Department
-                <input required minLength={2} maxLength={255} value={studentSignupCourse} onChange={(event) => setStudentSignupCourse(event.target.value)} placeholder="e.g. B.Tech Computer Science" className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal" />
-              </label>
-            </>
-          )}
-
-          <label className="block text-xs font-bold text-slate-700">
-            {mode === 'login' ? 'Registered phone number' : 'Email address or phone number'}
-            <input
-              type="text"
-              required
-              value={studentContact}
-              onChange={(event) => setStudentContact(event.target.value)}
-              placeholder={mode === 'login' ? '+91 98765 43210' : 'student@example.com'}
-              disabled={studentOtpRequested}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal"
-            />
-          </label>
-
-          {studentOtpRequested && (
-            <label className="block text-xs font-bold text-slate-700">One-time code
-            <input
-              required
-              minLength={4}
-              maxLength={12}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={studentOtp}
-              onChange={(event) => setStudentOtp(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-normal"
-            />
-            </label>
-          )}
-
-          {studentAuthMessage && <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">{studentAuthMessage}</p>}
-
-          <button type="submit" disabled={studentAuthLoading} className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60">
-            {studentAuthLoading ? 'Please wait…' : studentOtpRequested ? 'Verify code' : mode === 'signup' ? 'Create account & request code' : 'Request sign-in code'}
-          </button>
-          {studentOtpRequested && <button type="button" disabled={studentAuthLoading} onClick={() => { setStudentOtpRequested(false); setStudentOtp(''); setStudentAuthMessage(''); }} className="w-full text-xs font-semibold text-slate-500 hover:text-indigo-700">Change contact details</button>}
-          <p className="text-center text-xs text-slate-500">
-            {mode === 'login' ? 'New student?' : 'Already registered?'}{' '}
-            <button type="button" onClick={() => { setStudentOtpRequested(false); setStudentOtp(''); setStudentAuthMessage(''); navigate(mode === 'login' ? 'signup' : 'login'); }} className="font-semibold text-indigo-700 hover:underline">
-              {mode === 'login' ? 'Create an account' : 'Sign in'}
-            </button>
-          </p>
-        </form>
-      </div>
-    );
+    return null;
   };
 
   const renderAdminLoginPage = () => (

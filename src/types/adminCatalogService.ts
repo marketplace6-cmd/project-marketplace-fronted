@@ -183,32 +183,11 @@ function loadLocalCatalog(): AdminProject[] {
     const raw = localStorage.getItem(LOCAL_CATALOG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch { /* ignore */ }
 
-  const initialSeed: AdminProject[] = INITIAL_PROJECTS.map((p, idx) => ({
-    id: 100 + idx + 1,
-    project_code: p.id || `PRJ-${100 + idx + 1}`,
-    topic_name: p.title,
-    title: p.title,
-    category: p.category,
-    project_type: p.projectType,
-    short_description: p.shortDescription,
-    problem_statement: p.problemStatement,
-    difficulty: (p.difficulty ? p.difficulty.toUpperCase() : 'INTERMEDIATE') as any,
-    technology_stack: p.technologies ? p.technologies.join(', ') : '',
-    suitable_courses: p.suitableBranches ? p.suitableBranches.join(', ') : '',
-    feature_categories: p.featureCategories || [],
-    deliverables: p.deliverables || [],
-    price: p.price || 1499,
-    publication_status: 'PUBLISHED',
-    has_ppt: Boolean(p.previewEligible),
-    created_at: new Date(Date.now() - (idx + 1) * 86400000).toISOString(),
-    updated_at: new Date().toISOString()
-  }));
-  saveLocalCatalog(initialSeed);
-  return initialSeed;
+  return [];
 }
 
 function saveLocalCatalog(items: AdminProject[]): void {
@@ -288,7 +267,7 @@ export const AdminCatalogAPI = {
       }
 
       const { data, count, error } = await sbQuery.order('id', { ascending: false });
-      if (!error && data && data.length > 0) {
+      if (!error && Array.isArray(data)) {
         const items: AdminProject[] = data.map((d: any) => ({
           id: Number(d.id),
           project_code: d.project_code || `PRJ-${d.id}`,
@@ -296,22 +275,23 @@ export const AdminCatalogAPI = {
           title: d.title,
           category: d.category,
           project_type: d.project_type,
-          short_description: d.short_description,
+          short_description: d.short_description || '',
           problem_statement: d.problem_statement || '',
           feature_categories: Array.isArray(d.feature_categories) ? d.feature_categories : [],
           deliverables: Array.isArray(d.deliverables) ? d.deliverables : [],
           difficulty: d.difficulty || 'BEGINNER',
           technology_stack: d.technology_stack || '',
           suitable_courses: d.suitable_courses || '',
-          price: Number(d.price),
-          publication_status: d.publication_status,
+          price: Number(d.price) || 0,
+          publication_status: d.publication_status || 'PUBLISHED',
           has_ppt: Boolean(d.has_ppt),
           created_at: d.created_at || new Date().toISOString(),
           updated_at: d.updated_at || new Date().toISOString()
         }));
-        const total = count || items.length;
+        const total = count !== null ? count : items.length;
         const active = items.filter((p) => p.publication_status === 'PUBLISHED').length;
-        const soldOut = items.filter((p) => p.publication_status === 'SOLD_OUT').length;
+        const soldOut = items.filter((p) => p.publication_status === 'SOLD_OUT' || p.publication_status === 'SOLD').length;
+        saveLocalCatalog(items);
         return {
           items,
           total,
@@ -367,23 +347,29 @@ export const AdminCatalogAPI = {
       return parsed;
     } catch {
       try {
-        await supabase.from('projects').insert([{
+        const { data: inserted, error: insertErr } = await supabase.from('projects').insert([{
           project_code: newProject.project_code,
           topic_name: newProject.topic_name,
           title: newProject.title,
           category: newProject.category,
           project_type: newProject.project_type,
           short_description: newProject.short_description,
-          problem_statement: newProject.problem_statement,
           difficulty: newProject.difficulty,
           technology_stack: newProject.technology_stack,
           suitable_courses: newProject.suitable_courses,
-          feature_categories: newProject.feature_categories,
-          deliverables: newProject.deliverables,
           price: newProject.price,
           publication_status: newProject.publication_status,
           has_ppt: Boolean(presentation)
-        }]);
+        }]).select();
+
+        if (!insertErr && inserted && inserted.length > 0) {
+          const row = inserted[0];
+          newProject.id = Number(row.id);
+          newProject.project_code = row.project_code || newProject.project_code;
+          const updatedLocal = loadLocalCatalog().map((p) => (p.id === newProject.id ? newProject : p));
+          saveLocalCatalog(updatedLocal);
+          notifyCatalogChange();
+        }
       } catch {
         /* already in localStorage */
       }
@@ -419,8 +405,9 @@ export const AdminCatalogAPI = {
       return parsed;
     } catch {
       try {
+        const { problem_statement, feature_categories, deliverables, ...safeFields } = fields as any;
         await supabase.from('projects').update({
-          ...fields,
+          ...safeFields,
           updated_at: new Date().toISOString()
         }).eq('id', projectId);
       } catch {

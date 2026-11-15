@@ -143,3 +143,4 @@ async def delete_verification_record(
         "deleted_id": verification_id,
         "deleted_files": deleted_files
     }
+

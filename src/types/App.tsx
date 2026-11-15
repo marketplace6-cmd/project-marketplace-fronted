@@ -12,7 +12,7 @@ import {
   MeetingRecord, SupportTicket, StudentProfile
 } from './types';
 import {
-  INITIAL_PROJECTS, INITIAL_STUDENT, INITIAL_MEETINGS,
+  INITIAL_STUDENT, INITIAL_MEETINGS,
   INITIAL_TICKETS, AVAILABLE_TIME_SLOTS
 } from './mockData';
 import { AdminAuthAPI, AdminAuthError } from './adminAuthService';
@@ -207,8 +207,8 @@ export default function App() {
     };
   }, [student.authState, student.email, student.id]);
 
-  const [projects, setProjects] = useState<ProjectDTO[]>(useMockCatalogue ? INITIAL_PROJECTS : []);
-  const [catalogueLoading, setCatalogueLoading] = useState(!useMockCatalogue);
+  const [projects, setProjects] = useState<ProjectDTO[]>([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(true);
   const [catalogueError, setCatalogueError] = useState('');
   const [activeProjectId, setActiveProjectId] = useState<string>('PRJ-101');
   const [meetings, setMeetings] = useState<MeetingRecord[]>(INITIAL_MEETINGS);
@@ -1077,7 +1077,7 @@ export default function App() {
             </span>
           </div>
           {project.availability === 'SOLD_OUT' && (
-            <span className="absolute right-3 top-12 inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-extrabold tracking-wide text-white shadow">
+            <span className="absolute right-3 top-12 inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1 text-[11px] font-extrabold tracking-wide text-white shadow-md border border-rose-400">
               <Lock className="h-3 w-3" /> SOLD OUT
             </span>
           )}

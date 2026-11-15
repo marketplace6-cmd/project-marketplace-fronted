@@ -1,5 +1,4 @@
 import { ProjectDTO } from './types';
-import { INITIAL_PROJECTS } from './mockData';
 import { supabase } from '../utils/supabase/client';
 
 export class ProjectCatalogueError extends Error {
@@ -9,8 +8,7 @@ export class ProjectCatalogueError extends Error {
   }
 }
 
-export const useMockCatalogue =
-  import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_API !== 'false';
+export const useMockCatalogue = false;
 
 const configuredBaseUrl = (import.meta.env.VITE_ADMIN_API_BASE_URL || 'http://localhost:8000/api/v1')
   .replace(/\/+$/, '');
@@ -34,21 +32,32 @@ function splitList(value: unknown): string[] {
   return [];
 }
 
+const CATEGORY_THEMES: Record<string, string> = {
+  'Web Development': 'from-indigo-600 via-blue-600 to-cyan-500',
+  'Artificial Intelligence': 'from-emerald-600 via-teal-600 to-cyan-600',
+  'Machine Learning': 'from-violet-600 via-purple-600 to-indigo-600',
+  'Internet of Things': 'from-amber-600 via-orange-600 to-yellow-500',
+  'Android Development': 'from-blue-600 via-cyan-600 to-teal-500',
+  'Cybersecurity': 'from-rose-600 via-pink-600 to-red-500',
+  'Data Science': 'from-teal-600 via-emerald-600 to-green-500',
+  'Cloud Computing': 'from-sky-600 via-indigo-600 to-blue-500'
+};
+
 function mapProject(value: unknown): ProjectDTO {
   if (!isRecord(value)) {
     throw new ProjectCatalogueError('Catalogue service returned an invalid project.');
   }
   const id = String(value.id || Math.random());
-  const projectCode = typeof value.project_code === 'string' ? value.project_code : `PRJ-${id}`;
+  const projectCode = typeof value.project_code === 'string' && value.project_code ? value.project_code : `PRJ-${id}`;
   const title = typeof value.title === 'string' ? value.title : 'Untitled Project';
   const topicName = typeof value.topic_name === 'string' ? value.topic_name : title;
   const category = typeof value.category === 'string' ? value.category : 'General';
   const projectType = typeof value.project_type === 'string' ? value.project_type : 'Web Application';
   const shortDescription = typeof value.short_description === 'string' ? value.short_description : '';
   const price = typeof value.price === 'number' ? value.price : Number(value.price) || 0;
-  const publicationStatus = typeof value.publication_status === 'string' ? value.publication_status : 'PUBLISHED';
+  const publicationStatus = typeof value.publication_status === 'string' ? value.publication_status.toUpperCase() : 'PUBLISHED';
 
-  const soldOut = publicationStatus === 'SOLD_OUT';
+  const soldOut = publicationStatus === 'SOLD_OUT' || publicationStatus === 'SOLD';
   const hasPpt = value.has_ppt === true;
   const rawDiff = String(value.difficulty).toUpperCase();
   const difficulty: ProjectDTO['difficulty'] =
@@ -57,6 +66,9 @@ function mapProject(value: unknown): ProjectDTO {
       : rawDiff === 'ADVANCED'
         ? 'Advanced'
         : 'Intermediate';
+
+  const theme = CATEGORY_THEMES[category] || 'from-indigo-600 via-purple-600 to-pink-500';
+
   return {
     id,
     projectCode,
@@ -79,50 +91,41 @@ function mapProject(value: unknown): ProjectDTO {
     hasPpt,
     availability: soldOut ? 'SOLD_OUT' : 'ACTIVE',
     price,
-    genericPatternTheme: 'from-indigo-600 via-blue-600 to-cyan-500',
+    genericPatternTheme: theme,
     pptSlides: []
   };
 }
 
+/**
+ * Dynamically fetch public project catalogue from Supabase projects table
+ */
 export async function getPublicProjects(): Promise<ProjectDTO[]> {
-  // 1. Try Supabase projects table
+  // 1. Live query to Supabase projects table
   try {
-    const { data, error } = await supabase.from('projects').select('*').order('id', { ascending: false });
-    if (!error && data && data.length > 0) {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (!error && Array.isArray(data)) {
       return data.map(mapProject);
     }
-  } catch {
-    /* fallback */
+  } catch (err) {
+    console.warn('Supabase projects query warning:', err);
   }
 
-  // 2. Check localStorage (cpm_admin_catalog)
+  // 2. Offline fallback from localStorage if network unreachable
   try {
     const raw = localStorage.getItem('cpm_admin_catalog');
     if (raw) {
       const localProjects = JSON.parse(raw);
-      if (Array.isArray(localProjects) && localProjects.length > 0) {
+      if (Array.isArray(localProjects)) {
         return localProjects.map(mapProject);
       }
     }
   } catch {
-    /* fallback */
+    /* ignore */
   }
 
-  // 3. Try backend API if not in mock mode
-  if (!useMockCatalogue) {
-    try {
-      const response = await fetch(`${API_BASE_URL}/projects?page=1&page_size=100`);
-      if (response.ok) {
-        const payload = await response.json();
-        if (Array.isArray(payload) && payload.length > 0) {
-          return payload.map(mapProject);
-        }
-      }
-    } catch {
-      /* fallback */
-    }
-  }
-
-  // 4. Default fallback: initial sample projects
-  return INITIAL_PROJECTS;
+  return [];
 }

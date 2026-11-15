@@ -214,20 +214,6 @@ export const StudentRegistrationService = {
 
     saveStoredOtp(record);
 
-    // Save/Upsert in Supabase `otp_verifications` table if accessible
-    try {
-      await supabase.from('otp_verifications').insert([{
-        contact: cleanContact,
-        contact_type: validation.type,
-        otp_code_hash: codeHash,
-        expires_at: new Date(expiresAt).toISOString(),
-        attempts: 0,
-        is_verified: false
-      }]);
-    } catch (dbErr) {
-      console.warn('Database OTP log notice (local session active):', dbErr);
-    }
-
     // Send real Supabase Auth email OTP if email
     if (validation.type === 'email') {
       try {
@@ -252,9 +238,9 @@ export const StudentRegistrationService = {
   },
 
   /**
-   * 2. Verify 6-Digit OTP with rate limiting & expiry checks
+   * 2. Verify 6-Digit OTP against Supabase Auth using type: 'email'
    */
-  async verifyOtp(contact: string, code: string): Promise<{ success: boolean; message: string }> {
+  async verifyOtp(contact: string, code: string): Promise<{ success: boolean; message: string; session?: any; user?: any }> {
     const cleanContact = contact.trim().toLowerCase();
     const cleanCode = code.trim();
 
@@ -262,55 +248,29 @@ export const StudentRegistrationService = {
       throw new Error('Please enter a valid 6-digit numeric OTP code.');
     }
 
+    // Verify against Supabase Auth using type: 'email'
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: cleanContact,
+      token: cleanCode,
+      type: 'email'
+    });
+
+    if (error) {
+      console.warn('Supabase verifyOtp error:', error.message);
+      throw new Error('Invalid or expired OTP code.');
+    }
+
     const stored = getStoredOtp(cleanContact);
-    const now = Date.now();
-
-    // Check if OTP was requested
-    if (!stored) {
-      throw new Error('No active OTP found for this contact. Please click "Send OTP" first.');
-    }
-
-    // Check expiration (5 minutes)
-    if (stored.expires_at < now) {
-      throw new Error('This OTP code has expired. Please request a new one.');
-    }
-
-    // Check rate limit attempts
-    if (stored.attempts_left <= 0) {
-      throw new Error('Maximum verification attempts exceeded. Please request a new OTP.');
-    }
-
-    // Match code
-    const enteredHash = await hashString(cleanCode, cleanContact);
-    const isMatch = enteredHash === stored.code_hash || cleanCode === stored.code;
-
-    if (!isMatch) {
-      stored.attempts_left -= 1;
+    if (stored) {
+      stored.is_verified = true;
       saveStoredOtp(stored);
-      throw new Error(
-        stored.attempts_left > 0
-          ? `Invalid OTP code. You have ${stored.attempts_left} attempt${stored.attempts_left > 1 ? 's' : ''} remaining.`
-          : 'Invalid OTP code. Maximum attempts reached. Please request a new code.'
-      );
-    }
-
-    // Mark verified
-    stored.is_verified = true;
-    saveStoredOtp(stored);
-
-    // Update in Supabase
-    try {
-      await supabase
-        .from('otp_verifications')
-        .update({ is_verified: true, updated_at: new Date().toISOString() })
-        .eq('contact', cleanContact);
-    } catch {
-      /* ignore */
     }
 
     return {
       success: true,
-      message: 'Contact verified successfully! You may now complete your registration.'
+      message: 'Contact verified successfully! You may now complete your registration.',
+      session: data?.session,
+      user: data?.user || data?.session?.user
     };
   },
 
@@ -471,3 +431,4 @@ export const StudentRegistrationService = {
     };
   }
 };
+

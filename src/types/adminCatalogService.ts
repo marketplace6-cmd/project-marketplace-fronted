@@ -1,5 +1,4 @@
 import { supabase } from '../utils/supabase/client';
-import { INITIAL_PROJECTS } from './mockData';
 
 export type CatalogueStatus = 'DRAFT' | 'PUBLISHED' | 'SOLD_OUT';
 
@@ -362,7 +361,11 @@ export const AdminCatalogAPI = {
           has_ppt: Boolean(presentation)
         }]).select();
 
-        if (!insertErr && inserted && inserted.length > 0) {
+        if (insertErr) {
+          throw new AdminCatalogError(`Database insertion failed: ${insertErr.message}`, 400);
+        }
+
+        if (inserted && inserted.length > 0) {
           const row = inserted[0];
           newProject.id = Number(row.id);
           newProject.project_code = row.project_code || newProject.project_code;
@@ -370,8 +373,9 @@ export const AdminCatalogAPI = {
           saveLocalCatalog(updatedLocal);
           notifyCatalogChange();
         }
-      } catch {
-        /* already in localStorage */
+      } catch (dbErr: any) {
+        if (dbErr instanceof AdminCatalogError) throw dbErr;
+        throw new AdminCatalogError(dbErr?.message || 'Failed to save project to database.', 400);
       }
       return newProject;
     }
@@ -406,12 +410,16 @@ export const AdminCatalogAPI = {
     } catch {
       try {
         const { problem_statement, feature_categories, deliverables, ...safeFields } = fields as any;
-        await supabase.from('projects').update({
+        const { error: sbUpdateErr } = await supabase.from('projects').update({
           ...safeFields,
           updated_at: new Date().toISOString()
         }).eq('id', projectId);
-      } catch {
-        /* ignore */
+        if (sbUpdateErr) {
+          throw new AdminCatalogError(`Database update failed: ${sbUpdateErr.message}`, 400);
+        }
+      } catch (dbErr: any) {
+        if (dbErr instanceof AdminCatalogError) throw dbErr;
+        throw new AdminCatalogError(dbErr?.message || 'Database update failed.', 400);
       }
 
       if (updatedLocal) return updatedLocal;
@@ -439,12 +447,16 @@ export const AdminCatalogAPI = {
       return parseProject(serverRes);
     } catch {
       try {
-        await supabase.from('projects').update({
+        const { error: sbSoldOutErr } = await supabase.from('projects').update({
           publication_status: 'SOLD_OUT',
           updated_at: new Date().toISOString()
         }).eq('id', projectId);
-      } catch {
-        /* ignore */
+        if (sbSoldOutErr) {
+          throw new AdminCatalogError(`Database update failed: ${sbSoldOutErr.message}`, 400);
+        }
+      } catch (dbErr: any) {
+        if (dbErr instanceof AdminCatalogError) throw dbErr;
+        throw new AdminCatalogError(dbErr?.message || 'Database update failed.', 400);
       }
 
       if (updated) return updated;
@@ -453,20 +465,39 @@ export const AdminCatalogAPI = {
   },
 
   async delete(accessToken: string, projectId: number): Promise<void> {
-    const existing = loadLocalCatalog();
-    saveLocalCatalog(existing.filter((p) => p.id !== projectId));
-    notifyCatalogChange();
-
     try {
       await request(`/admin/projects/${projectId}`, accessToken, {
         method: 'DELETE'
       });
     } catch {
-      try {
-        await supabase.from('projects').delete().eq('id', projectId);
-      } catch {
-        /* ignore */
-      }
+      // Backend request bypassed if running in standalone frontend/Supabase mode
     }
+
+    // Direct permanent delete in Supabase
+    try {
+      const { error: sbDeleteErr } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId);
+
+      if (sbDeleteErr) {
+        throw new AdminCatalogError(
+          `Database deletion failed: ${sbDeleteErr.message}`,
+          500
+        );
+      }
+    } catch (err: any) {
+      if (err instanceof AdminCatalogError) throw err;
+      throw new AdminCatalogError(
+        err?.message || 'Failed to delete project from database.',
+        500
+      );
+    }
+
+    // Update localStorage cache with the exact remaining array (never reset to seed data)
+    const existing = loadLocalCatalog();
+    const remaining = existing.filter((p) => Number(p.id) !== Number(projectId));
+    saveLocalCatalog(remaining);
+    notifyCatalogChange();
   }
 };

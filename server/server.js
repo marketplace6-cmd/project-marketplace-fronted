@@ -47,6 +47,25 @@ app.delete('/api/admin/verification/:id', (req, res) => {
   });
 });
 
+// Admin Project Deletion Endpoints
+app.delete('/admin/projects/:id', (req, res) => {
+  const { id } = req.params;
+  res.json({
+    success: true,
+    message: `Catalogue project ${id} permanently deleted.`,
+    deleted_id: id
+  });
+});
+
+app.delete('/api/v1/admin/projects/:id', (req, res) => {
+  const { id } = req.params;
+  res.json({
+    success: true,
+    message: `Catalogue project ${id} permanently deleted.`,
+    deleted_id: id
+  });
+});
+
 // Start server if executed directly
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {

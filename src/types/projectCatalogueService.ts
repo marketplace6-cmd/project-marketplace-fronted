@@ -108,6 +108,11 @@ export async function getPublicProjects(): Promise<ProjectDTO[]> {
       .order('id', { ascending: false });
 
     if (!error && Array.isArray(data)) {
+      try {
+        localStorage.setItem('cpm_admin_catalog', JSON.stringify(data));
+      } catch {
+        /* ignore */
+      }
       return data.map(mapProject);
     }
   } catch (err) {

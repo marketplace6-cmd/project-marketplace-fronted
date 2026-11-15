@@ -438,7 +438,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
     setActionError('');
     try {
       await AdminCatalogAPI.delete(accessToken, deletingProject.id);
-      setNotice(`Project ${deletingProject.project_code} deleted successfully.`);
+      setNotice(`Project ${deletingProject.project_code} deleted permanently from database and cache.`);
       setDeletingProject(null);
       await refreshCatalogue();
       if (onChanged) onChanged();
@@ -447,7 +447,9 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
         onSessionExpired();
         return;
       }
-      setActionError(requestError instanceof Error ? requestError.message : 'Unable to delete project.');
+      const msg = requestError instanceof Error ? requestError.message : 'Unable to delete project.';
+      setActionError(msg);
+      setError(msg);
       await refreshCatalogue();
     } finally {
       setSaving(false);
@@ -630,14 +632,20 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
         ) : filteredItems.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <FileText size={32} className="mx-auto text-slate-400" />
-            <h3 className="mt-3 text-base font-semibold text-slate-800">No catalogue projects found</h3>
-            <p className="mt-1 text-sm text-slate-500">Try adjusting your filters or click "+ Add New Project" to create one.</p>
+            <h3 className="mt-3 text-base font-semibold text-slate-800">
+              {catalogue.items.length === 0 ? 'No projects published yet' : 'No catalogue projects found'}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              {catalogue.items.length === 0
+                ? "No projects published yet. Click '+ Add New Project' to add your first academic project."
+                : 'Try adjusting your filters or click "+ Add New Project" to create one.'}
+            </p>
             <button
               type="button"
               onClick={openCreateForm}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 shadow-sm"
             >
-              <Plus size={15} /> Add Project Now
+              <Plus size={15} /> + Add New Project
             </button>
           </div>
         ) : (

@@ -937,8 +937,8 @@ export default function App() {
     }
   };
 
-  const activeProject = useMemo(() => projects.find((p) => p.id === activeProjectId) || projects[0], [projects, activeProjectId]);
-  const checkoutProject = useMemo(() => projects.find((p) => p.id === checkoutProjectId) || projects[0], [projects, checkoutProjectId]);
+  const activeProject = useMemo(() => projects.find((p) => p.id === activeProjectId) || projects[0] || null, [projects, activeProjectId]);
+  const checkoutProject = useMemo(() => projects.find((p) => p.id === checkoutProjectId) || projects[0] || null, [projects, checkoutProjectId]);
 
   const handleViewProject = (projectId: string) => {
     setActiveProjectId(projectId);
@@ -1455,24 +1455,26 @@ export default function App() {
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
             <Search className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-            <h3 className="text-lg font-bold text-slate-900">{projects.length ? 'No Matching Projects Found' : 'No Projects Available'}</h3>
+            <h3 className="text-lg font-bold text-slate-900">{projects.length ? 'No Matching Projects Found' : 'No Projects Published Yet'}</h3>
             <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto">
               {projects.length
                 ? 'No projects match your current filter combination. Try resetting the technology or difficulty filters.'
-                : 'The live catalogue is empty. Please check back later.'}
+                : 'No academic projects have been published to the live catalogue yet. Please check back later.'}
             </p>
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedCategory('All');
-                setSelectedType('All');
-                setSelectedDifficulty('All');
-                setSelectedTech('All');
-              }}
-              className="mt-4 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg"
-            >
-              Reset All Filters
-            </button>
+            {projects.length > 0 && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCategory('All');
+                  setSelectedType('All');
+                  setSelectedDifficulty('All');
+                  setSelectedTech('All');
+                }}
+                className="mt-4 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg"
+              >
+                Reset All Filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1484,6 +1486,22 @@ export default function App() {
   };
 
   const renderProjectDetailsPage = () => {
+    if (!activeProject) {
+      return (
+        <div className="max-w-4xl mx-auto py-16 px-4 text-center">
+          <div className="bg-white rounded-2xl border border-slate-200 p-12">
+            <h2 className="text-xl font-bold text-slate-900 mb-2">Project Not Available</h2>
+            <p className="text-sm text-slate-500 mb-6">No project details could be found. It may have been removed from the catalogue.</p>
+            <button
+              onClick={() => navigate('explore')}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
+            >
+              Back to Explore Projects
+            </button>
+          </div>
+        </div>
+      );
+    }
     const isViewed = student.viewedProjectIds.includes(activeProject.id);
     const isSelected = student.selectedProjectIds.includes(activeProject.id);
 
@@ -1509,7 +1527,7 @@ export default function App() {
                 Difficulty: {activeProject.difficulty}
               </span>
               {activeProject.availability === 'SOLD_OUT' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-xs font-extrabold text-white">
+                <span className="inline-flex items-center gap-1 rounded-full bg-rose-600 px-3 py-1 text-xs font-extrabold text-white shadow-sm border border-rose-400">
                   <Lock className="h-3.5 w-3.5" /> SOLD OUT
                 </span>
               )}
@@ -1699,6 +1717,18 @@ export default function App() {
   };
 
   const renderPptPreviewPage = () => {
+    if (!activeProject) {
+      return (
+        <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+          <FileText className="mx-auto h-10 w-10 text-slate-400" />
+          <h1 className="mt-4 text-xl font-bold text-slate-900">No Presentation Available</h1>
+          <p className="mt-2 text-sm text-slate-600">Please choose a project from the catalogue to preview slides.</p>
+          <button onClick={() => navigate('explore')} className="mt-4 px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg">
+            Back to Explore Projects
+          </button>
+        </div>
+      );
+    }
     if (student.authState !== 'verified') {
       return (
         <div className="mx-auto max-w-3xl px-4 py-16 text-center">
@@ -2862,6 +2892,16 @@ export default function App() {
   );
 
   const renderCheckoutPage = () => {
+    if (!checkoutProject) {
+      return (
+        <div className="mx-auto max-w-3xl px-4 py-16 text-center">
+          <FileText className="mx-auto h-10 w-10 text-slate-400" />
+          <h1 className="mt-4 text-xl font-bold text-slate-900">No Project Selected</h1>
+          <p className="mt-2 text-sm text-slate-600">Please choose a project from the catalogue to proceed with booking.</p>
+          <button onClick={() => navigate('explore')} className="mt-5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Back to Catalogue</button>
+        </div>
+      );
+    }
     if (checkoutProject.availability === 'SOLD_OUT') {
       return (
         <div className="mx-auto max-w-3xl px-4 py-16 text-center">

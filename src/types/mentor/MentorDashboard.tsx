@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import {
   Users,
   MessageSquare,
@@ -180,7 +180,7 @@ export default function MentorDashboard({ onNavigate, onLogout, embedded = false
   const openWhatsApp = (phone: string, studentName: string, projectTitle: string, price: number) => {
     const cleanPhone = phone.replace(/[^0-9]/g, '');
     const message = encodeURIComponent(
-      `Hello ${studentName}! I am your mentor on Uvikart regarding your project "${projectTitle}". Our agreed package price is ₹${price}. Please let me know if you would like to proceed with the code files and scheduled guidance session.`
+      `Hello ${studentName}! I am your mentor on Unikart regarding your project "${projectTitle}". Our agreed package price is ₹${price}. Please let me know if you would like to proceed with the code files and scheduled guidance session.`
     );
     window.open(`https://wa.me/${cleanPhone}?text=${message}`, '_blank');
   };
@@ -244,7 +244,7 @@ export default function MentorDashboard({ onNavigate, onLogout, embedded = false
                   U
                 </div>
                 <div>
-                  <span className="font-extrabold text-base tracking-tight text-slate-900">Uvikart</span>
+                  <span className="font-extrabold text-base tracking-tight text-slate-900">Unikart</span>
                   <span className="block text-[9px] font-mono text-indigo-600 font-bold uppercase tracking-wider -mt-0.5">
                     Mentor Workspace
                   </span>
@@ -723,7 +723,7 @@ export default function MentorDashboard({ onNavigate, onLogout, embedded = false
                     >
                       <option value="UPI">UPI / PhonePe / GPay</option>
                       <option value="Bank Transfer">Bank Transfer (IMPS/NEFT)</option>
-                      <option value="QR Scan">Uvikart QR Scan</option>
+                      <option value="QR Scan">Unikart QR Scan</option>
                       <option value="Direct Cash">Direct Cash</option>
                     </select>
                   </div>

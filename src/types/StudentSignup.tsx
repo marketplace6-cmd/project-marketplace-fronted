@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   GraduationCap,
@@ -212,7 +212,7 @@ export default function StudentSignup({
       }
     }
 
-    displayToast(`Welcome to Uvikart, ${fullName.trim()}! Your Student ID & Referral Code is ${studentIdCode}.`, 'success');
+    displayToast(`Welcome to Unikart, ${fullName.trim()}! Your Student ID & Referral Code is ${studentIdCode}.`, 'success');
 
     if (onSuccess) {
       onSuccess({ studentProfile });
@@ -247,7 +247,7 @@ export default function StudentSignup({
     setSubmitting(true);
 
     try {
-      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://uvikart.com';
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://unikart.com';
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password: password,
@@ -356,7 +356,7 @@ export default function StudentSignup({
     const cleanEmail = email.trim().toLowerCase();
 
     try {
-      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://uvikart.com';
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://unikart.com';
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: cleanEmail,

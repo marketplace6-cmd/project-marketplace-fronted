@@ -1,4 +1,4 @@
-import { supabase } from '../utils/supabase/client';
+﻿import { supabase } from '../utils/supabase/client';
 
 export type CatalogueStatus = 'DRAFT' | 'PUBLISHED' | 'SOLD_OUT';
 
@@ -173,7 +173,7 @@ const LOCAL_CATALOG_KEY = 'cpm_admin_catalog';
 
 function notifyCatalogChange() {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('uvikart-catalogue-updated'));
+    window.dispatchEvent(new CustomEvent('unikart-catalogue-updated'));
   }
 }
 

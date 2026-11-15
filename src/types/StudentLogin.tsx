@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import {
   ShieldCheck,
@@ -237,7 +237,7 @@ export default function StudentLogin({
     setForgotLoading(true);
 
     try {
-      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://uvikart.com';
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://unikart.com';
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: redirectUrl
       });

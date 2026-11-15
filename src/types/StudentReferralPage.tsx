@@ -1,4 +1,4 @@
-import { useEffect, useState, FormEvent } from 'react';
+﻿import { useEffect, useState, FormEvent } from 'react';
 import {
   Check,
   Copy,
@@ -151,7 +151,7 @@ function createDefaultDashboard(studentId: string, referralCode: string): Studen
     status: 'ACTIVE',
     referral_link: typeof window !== 'undefined'
       ? `${window.location.origin}/register?ref=${referralCode}`
-      : `https://uvikart.com/register?ref=${referralCode}`,
+      : `https://unikart.com/register?ref=${referralCode}`,
     total_successful_referrals: 0,
     pending_referrals: 0,
     eligible_rewards: 0,
@@ -506,7 +506,7 @@ export default function StudentReferralPage({
           status: 'ACTIVE',
           referral_link: typeof window !== 'undefined'
             ? `${window.location.origin}/register?ref=${effectiveCode}`
-            : `https://uvikart.com/register?ref=${effectiveCode}`,
+            : `https://unikart.com/register?ref=${effectiveCode}`,
           total_successful_referrals: totalSuccessful,
           pending_referrals: pendingReferrals,
           eligible_rewards: eligibleRewards,
@@ -529,7 +529,7 @@ export default function StudentReferralPage({
 
     // Realtime Supabase Subscription: Auto-update on new referrals, orders, verifications, or payouts
     const channel = supabase
-      .channel(`uvikart-referral-live-${referralCode || studentId || 'isolated'}`)
+      .channel(`unikart-referral-live-${referralCode || studentId || 'isolated'}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
         void loadLiveReferralData();
       })
@@ -556,8 +556,8 @@ export default function StudentReferralPage({
     try {
       if (navigator.share) {
         await navigator.share({
-          title: `Join Uvikart with Referral Code ${dashboard.referral_code}`,
-          text: `Explore verified college projects on Uvikart! Use my Referral Code ${dashboard.referral_code}:`,
+          title: `Join Unikart with Referral Code ${dashboard.referral_code}`,
+          text: `Explore verified college projects on Unikart! Use my Referral Code ${dashboard.referral_code}:`,
           url: dashboard.referral_link
         });
         setMessage('Referral link shared successfully.');
@@ -649,7 +649,7 @@ export default function StudentReferralPage({
 
   const effectiveCode = dashboard.referral_code || referralCode;
   const effectiveStudentId = dashboard.student_id || studentId;
-  const effectiveLink = dashboard.referral_link || `https://uvikart.com/register?ref=${effectiveCode}`;
+  const effectiveLink = dashboard.referral_link || `https://unikart.com/register?ref=${effectiveCode}`;
   const totalNetworkEarnings = levelStats.reduce((sum, tier) => sum + tier.totalEarnings, 0);
 
   // Pending withdrawals hold and available withdrawal balance

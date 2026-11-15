@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+﻿import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, RefreshCw, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
 import {
   StudentVerificationAPI,
@@ -128,12 +128,12 @@ export default function StudentVerificationPage({
     const handleUpdate = () => {
       void refresh();
     };
-    window.addEventListener('uvikart:verification_updated', handleUpdate);
-    window.addEventListener('uvikart:new_notification', handleUpdate);
+    window.addEventListener('unikart:verification_updated', handleUpdate);
+    window.addEventListener('unikart:new_notification', handleUpdate);
     return () => {
       window.clearTimeout(timer);
-      window.removeEventListener('uvikart:verification_updated', handleUpdate);
-      window.removeEventListener('uvikart:new_notification', handleUpdate);
+      window.removeEventListener('unikart:verification_updated', handleUpdate);
+      window.removeEventListener('unikart:new_notification', handleUpdate);
     };
   }, [refresh]);
 
@@ -365,7 +365,7 @@ export default function StudentVerificationPage({
                 <div>
                   <h3 className="text-base font-bold text-rose-950">Account Restricted from Verification</h3>
                   <p className="mt-1 text-xs text-rose-800">
-                    Your submitted ID documents were rejected 2 times. In accordance with Uvikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
+                    Your submitted ID documents were rejected 2 times. In accordance with Unikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
                   </p>
                   {verification.rejection_reason && (
                     <div className="mt-3 p-3 rounded-xl bg-rose-100 border border-rose-200 text-xs text-rose-900">
@@ -378,7 +378,7 @@ export default function StudentVerificationPage({
                 </div>
               </div>
               <div className="mt-5 flex flex-wrap items-center gap-3">
-                <a href="mailto:support@uvikart.com?subject=Verification%20Account%20Restriction%20Inquiry" className="rounded-lg bg-rose-700 px-4 py-2 text-xs font-bold text-white hover:bg-rose-800 shadow-xs">
+                <a href="mailto:support@unikart.com?subject=Verification%20Account%20Restriction%20Inquiry" className="rounded-lg bg-rose-700 px-4 py-2 text-xs font-bold text-white hover:bg-rose-800 shadow-xs">
                   Contact Academic Support &rarr;
                 </a>
                 <button type="button" onClick={onContinue} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">

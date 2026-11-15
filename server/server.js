@@ -1,5 +1,5 @@
-/**
- * Uvikart Backend Server
+﻿/**
+ * Unikart Backend Server
  * Express.js API Gateway with Authentication & Database Integration
  */
 import express from 'express';
@@ -22,7 +22,7 @@ app.use((req, res, next) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', service: 'Uvikart Authentication API', time: new Date().toISOString() });
+  res.json({ status: 'healthy', service: 'Unikart Authentication API', time: new Date().toISOString() });
 });
 
 // Mount authentication routes
@@ -69,7 +69,7 @@ app.delete('/api/v1/admin/projects/:id', (req, res) => {
 // Start server if executed directly
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`[Uvikart API] Server is active and listening on http://localhost:${PORT}`);
+    console.log(`[Unikart API] Server is active and listening on http://localhost:${PORT}`);
   });
 }
 

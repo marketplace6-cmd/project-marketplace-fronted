@@ -1,5 +1,5 @@
-/**
- * Uvikart Student Authentication & OTP API Routes
+﻿/**
+ * Unikart Student Authentication & OTP API Routes
  * Express.js Backend Service
  */
 import express from 'express';
@@ -14,7 +14,7 @@ const OTP_COOLDOWN_MS = 60 * 1000; // 60 seconds
 const MAX_ATTEMPTS = 5;
 
 // Hash helper for OTPs and Passwords
-function hashValue(value, salt = 'uvikart_secret_2026') {
+function hashValue(value, salt = 'unikart_secret_2026') {
   return crypto.createHmac('sha256', salt).update(value).digest('hex');
 }
 
@@ -76,7 +76,7 @@ router.post('/send-otp', async (req, res) => {
       isVerified: false
     });
 
-    console.log(`[Uvikart Auth] OTP generated for ${cleanContact}: ${otpCode} (Expires in 5m)`);
+    console.log(`[Unikart Auth] OTP generated for ${cleanContact}: ${otpCode} (Expires in 5m)`);
 
     return res.status(200).json({
       success: true,
@@ -185,7 +185,7 @@ router.post('/register', async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: `Account created successfully! Welcome to Uvikart, ${fullName.trim()}.`,
+      message: `Account created successfully! Welcome to Unikart, ${fullName.trim()}.`,
       student: {
         id: studentId,
         fullName: fullName.trim(),

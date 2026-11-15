@@ -1,8 +1,8 @@
-import { ProjectDTO, StudentProfile, MeetingRecord, OrderRecord, SupportTicket } from './types';
+﻿import { ProjectDTO, StudentProfile, MeetingRecord, OrderRecord, SupportTicket } from './types';
 
 export const INITIAL_PROJECTS: ProjectDTO[] = [];
 
-// Default student state for Uvikart marketplace (isolated per user)
+// Default student state for Unikart marketplace (isolated per user)
 export const INITIAL_STUDENT: StudentProfile = {
   id: '',
   fullName: '',

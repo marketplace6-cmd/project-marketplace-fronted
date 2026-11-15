@@ -1,4 +1,4 @@
-import { supabase } from '../utils/supabase/client';
+﻿import { supabase } from '../utils/supabase/client';
 import { SAMPLE_STUDENT_ID_FRONT, SAMPLE_STUDENT_ID_BACK } from './mockIdCards';
 
 export interface VerificationQueueItem {
@@ -676,7 +676,7 @@ export const StudentVerificationAPI = {
     }
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('uvikart:verification_updated', {
+      window.dispatchEvent(new CustomEvent('unikart:verification_updated', {
         detail: {
           verificationId: userId,
           status: newStatus,
@@ -1195,7 +1195,7 @@ export const AdminVerificationAPI = {
       }
 
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('uvikart:new_notification', {
+        window.dispatchEvent(new CustomEvent('unikart:new_notification', {
           detail: notificationRecord
         }));
       }
@@ -1278,7 +1278,7 @@ export const AdminVerificationAPI = {
 
     // 7. Dispatch verification updated event
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('uvikart:verification_updated', {
+      window.dispatchEvent(new CustomEvent('unikart:verification_updated', {
         detail: {
           verificationId,
           user_id: studentUserIdentifier,
@@ -1413,7 +1413,7 @@ export const AdminVerificationAPI = {
     // 5. Dispatch live event
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
-        new CustomEvent('uvikart:verification_deleted', {
+        new CustomEvent('unikart:verification_deleted', {
           detail: { verificationId: item.id, student_id_code: item.student_id_code, email: item.email }
         })
       );
@@ -1502,13 +1502,13 @@ function generatePaymentProofSvg(info: {
   <text x="230" y="225" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">AK REFERRAL CODE</text>
   <text x="230" y="245" font-family="monospace" font-size="14" font-weight="800" fill="#059669">${escapeXml(referralCode || 'A7K2')}</text>
   <text x="230" y="280" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">BENEFICIARY</text>
-  <text x="230" y="300" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#1e293b">Uvikart Escrow Services</text>
+  <text x="230" y="300" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#1e293b">Unikart Escrow Services</text>
   <text x="410" y="225" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">UTR / TXN REF</text>
   <text x="410" y="245" font-family="monospace" font-size="12" font-weight="700" fill="#334155">UTR482910482918</text>
   <text x="410" y="280" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">PAYMENT METHOD</text>
   <text x="410" y="300" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#1e293b">Google Pay / PhonePe UPI</text>
   <rect x="45" y="325" width="510" height="26" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
-  <text x="300" y="342" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Official Transaction Proof • Verified by Uvikart Admin Payment Gateway</text>
+  <text x="300" y="342" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Official Transaction Proof • Verified by Unikart Admin Payment Gateway</text>
 </svg>`;
 }
 
@@ -1529,7 +1529,7 @@ function generateProjectPreviewSvg(info: {
   <rect x="15" y="15" width="570" height="350" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
   <path d="M 15 31 Q 15 15 31 15 L 569 15 Q 585 15 585 31 L 585 85 L 15 85 Z" fill="url(#prjGrad)"/>
   <text x="300" y="48" font-family="system-ui, sans-serif" font-size="16" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">PROJECT ARCHITECTURE &amp; SOURCE BLUEPRINT</text>
-  <text x="300" y="70" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#c7d2fe" text-anchor="middle" letter-spacing="1">ACADEMIC EVALUATION PREVIEW • UVIKART</text>
+  <text x="300" y="70" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#c7d2fe" text-anchor="middle" letter-spacing="1">ACADEMIC EVALUATION PREVIEW • UNIKART</text>
   <rect x="45" y="115" width="145" height="110" rx="10" fill="#f8fafc" stroke="#6366f1" stroke-width="2"/>
   <text x="117" y="145" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#4338ca" text-anchor="middle">React Frontend</text>
   <text x="117" y="170" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#64748b" text-anchor="middle">Tailwind CSS + Vite</text>
@@ -1552,7 +1552,7 @@ function generateProjectPreviewSvg(info: {
   <text x="360" y="270" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">AK REFERRAL CODE</text>
   <text x="360" y="290" font-family="monospace" font-size="13" font-weight="800" fill="#059669">${escapeXml(referralCode || 'A7K2')}</text>
   <rect x="45" y="315" width="510" height="32" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
-  <text x="300" y="335" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#475569" text-anchor="middle">WATERMARKED ACADEMIC PREVIEW • PROTECTED BY UVIKART VERIFICATION</text>
+  <text x="300" y="335" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#475569" text-anchor="middle">WATERMARKED ACADEMIC PREVIEW • PROTECTED BY UNIKART VERIFICATION</text>
 </svg>`;
 }
 
@@ -1674,7 +1674,7 @@ function generateStudentIdCardBackSvg(info: {
     <text x="120" y="15" font-family="monospace" font-size="11" font-weight="700" fill="#0f172a">BARCODE: * ${escapeXml(studentIdCode || studentId)} * VALID 2026-2028</text>
   </g>
   <rect x="40" y="335" width="520" height="24" rx="4" fill="#f1f5f9"/>
-  <text x="300" y="351" font-family="system-ui, sans-serif" font-size="9" font-weight="700" fill="#64748b" text-anchor="middle">OFFICIAL STUDENT VERIFICATION COPY • PROTECTED BY UVIKART VERIFICATION</text>
+  <text x="300" y="351" font-family="system-ui, sans-serif" font-size="9" font-weight="700" fill="#64748b" text-anchor="middle">OFFICIAL STUDENT VERIFICATION COPY • PROTECTED BY UNIKART VERIFICATION</text>
 </svg>`;
 }
 

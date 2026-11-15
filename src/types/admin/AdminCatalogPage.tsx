@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Archive,
@@ -256,9 +256,9 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
     const handleUpdate = () => {
       void refreshCatalogue();
     };
-    window.addEventListener('uvikart-catalogue-updated', handleUpdate);
+    window.addEventListener('unikart-catalogue-updated', handleUpdate);
     return () => {
-      window.removeEventListener('uvikart-catalogue-updated', handleUpdate);
+      window.removeEventListener('unikart-catalogue-updated', handleUpdate);
     };
   }, [refreshCatalogue]);
 
@@ -1224,7 +1224,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
                   <div className="pt-4 border-t border-slate-200">
                     <span className="block text-xs font-semibold text-slate-700">Project Presentation File (PPT, PPTX, PDF)</span>
                     <p className="text-[11px] text-slate-500 mb-2">
-                      Allows verified students to view presentation slide previews on Uvikart before scheduling meetings.
+                      Allows verified students to view presentation slide previews on Unikart before scheduling meetings.
                     </p>
 
                     <div className="mt-2 flex items-center gap-3">

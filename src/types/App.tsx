@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ShieldCheck, Search, Filter, Heart, Calendar, CheckCircle2,
   Lock, FileText, Award, HelpCircle, LogOut, Menu, X, ChevronRight,
@@ -197,13 +197,13 @@ export default function App() {
       void syncStatus();
     };
 
-    window.addEventListener('uvikart:verification_updated', handleVerificationUpdated);
-    window.addEventListener('uvikart:new_notification', handleNewNotification);
+    window.addEventListener('unikart:verification_updated', handleVerificationUpdated);
+    window.addEventListener('unikart:new_notification', handleNewNotification);
 
     return () => {
       void supabase.removeChannel(channel);
-      window.removeEventListener('uvikart:verification_updated', handleVerificationUpdated);
-      window.removeEventListener('uvikart:new_notification', handleNewNotification);
+      window.removeEventListener('unikart:verification_updated', handleVerificationUpdated);
+      window.removeEventListener('unikart:new_notification', handleNewNotification);
     };
   }, [student.authState, student.email, student.id]);
 
@@ -236,7 +236,7 @@ export default function App() {
   const currentCollege = student.collegeName || 'Usha Martin University';
   const currentReferralLink = typeof window !== 'undefined'
     ? `${window.location.origin}/register?ref=${currentAkReferralCode}`
-    : `https://uvikart.com/register?ref=${currentAkReferralCode}`;
+    : `https://unikart.com/register?ref=${currentAkReferralCode}`;
   const [adminUserId, setAdminUserId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [showAdminPassword, setShowAdminPassword] = useState(false);
@@ -463,9 +463,9 @@ export default function App() {
         })
         .catch(() => {});
     };
-    window.addEventListener('uvikart-catalogue-updated', handleCatalogUpdate);
+    window.addEventListener('unikart-catalogue-updated', handleCatalogUpdate);
     return () => {
-      window.removeEventListener('uvikart-catalogue-updated', handleCatalogUpdate);
+      window.removeEventListener('unikart-catalogue-updated', handleCatalogUpdate);
     };
   }, []);
 
@@ -673,7 +673,7 @@ export default function App() {
           return;
         }
 
-        const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://uvikart.com';
+        const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://unikart.com';
         const { data, error } = await supabase.auth.signInWithOtp({
           email: cleanEmail,
           options: {
@@ -1745,7 +1745,7 @@ export default function App() {
         bulletPoints: [
           'Comprehensive System Architecture & Implementation',
           'Production-grade Source Code and Deliverables Included',
-          'Academic Verification Approved by Uvikart'
+          'Academic Verification Approved by Unikart'
         ],
         diagramType: 'Architecture Overview'
       },
@@ -1828,7 +1828,7 @@ export default function App() {
 
           <div className="relative z-10 pt-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 mt-8">
             <span>{currentSlide.footerNote}</span>
-            <span>Uvikart Protected Viewer</span>
+            <span>Unikart Protected Viewer</span>
           </div>
         </div>
 
@@ -2424,7 +2424,7 @@ export default function App() {
                       </span>
                     </div>
                     <p className="text-xs text-amber-900 mt-1 max-w-2xl leading-relaxed">
-                      Your submitted documents were reviewed by the Uvikart administrator. Please re-upload clearer front and back photos of your college ID card (PNG or JPG, max 50 KB each) using the form below to complete verification and unlock PPT previews.
+                      Your submitted documents were reviewed by the Unikart administrator. Please re-upload clearer front and back photos of your college ID card (PNG or JPG, max 50 KB each) using the form below to complete verification and unlock PPT previews.
                     </p>
                   </div>
                 </div>
@@ -2462,7 +2462,7 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-xs text-rose-900 mt-1 leading-relaxed">
-                    Your submitted ID documents were rejected 2 times. In accordance with Uvikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
+                    Your submitted ID documents were rejected 2 times. In accordance with Unikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
                   </p>
                   {student.rejectionReason && (
                     <p className="mt-2 text-xs font-semibold text-rose-900 bg-rose-100/80 p-2.5 rounded-lg border border-rose-200">
@@ -2625,7 +2625,7 @@ export default function App() {
                           </span>
                         </div>
                         <p className="text-xs text-emerald-800 mt-1 max-w-xl leading-relaxed">
-                          Your student credentials (<strong>{studentId}</strong>) have been officially approved by Uvikart administrators. Full academic privileges, all protected project presentation (PPT) previews, and deliverables are unlocked.
+                          Your student credentials (<strong>{studentId}</strong>) have been officially approved by Unikart administrators. Full academic privileges, all protected project presentation (PPT) previews, and deliverables are unlocked.
                         </p>
                       </div>
                     </div>
@@ -2652,7 +2652,7 @@ export default function App() {
                         </span>
                       </div>
                       <p className="text-xs text-rose-800 mt-1.5 leading-relaxed">
-                        Your submitted ID documents were rejected 2 times. In accordance with Uvikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
+                        Your submitted ID documents were rejected 2 times. In accordance with Unikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
                       </p>
                       {student.rejectionReason && (
                         <div className="mt-3 p-3 rounded-xl bg-rose-100/80 border border-rose-200 text-xs text-rose-950">
@@ -2661,7 +2661,7 @@ export default function App() {
                       )}
                       <div className="mt-4 flex flex-wrap items-center gap-3">
                         <a
-                          href="mailto:support@uvikart.com?subject=Verification%20Restriction%20Inquiry%20-%20STU-2026-0001"
+                          href="mailto:support@unikart.com?subject=Verification%20Restriction%20Inquiry%20-%20STU-2026-0001"
                           className="inline-flex items-center gap-1.5 px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
                         >
                           Contact Academic Support &rarr;
@@ -2808,8 +2808,8 @@ export default function App() {
                   {student.authState === 'verification_pending' && (
                     <p className="mt-2.5 text-center text-xs text-amber-900 font-medium">
                       {(student.rejectionCount || 0) > 0
-                        ? '⚡ Your corrected documents have been re-submitted with Priority #1 ranking in the Uvikart administrator queue. Obsolete previous files have been purged.'
-                        : '✓ Your documents have been submitted to the Uvikart administrator queue. Status will update automatically once verified.'}
+                        ? '⚡ Your corrected documents have been re-submitted with Priority #1 ranking in the Unikart administrator queue. Obsolete previous files have been purged.'
+                        : '✓ Your documents have been submitted to the Unikart administrator queue. Status will update automatically once verified.'}
                     </p>
                   )}
                 </div>
@@ -3177,11 +3177,11 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/20 text-emerald-300 text-xs font-bold mb-3 border border-emerald-400/30">
-                <Sparkles className="w-3.5 h-3.5" /> Uvikart Rewards Program
+                <Sparkles className="w-3.5 h-3.5" /> Unikart Rewards Program
               </div>
               <h3 className="text-xl font-extrabold tracking-tight">Share & Earn Rewards</h3>
               <p className="text-xs text-indigo-200 mt-1 max-w-md">
-                Invite fellow classmates and students to Uvikart. Earn real cash rewards for each verified friend who joins and purchases a project across 4 referral tiers.
+                Invite fellow classmates and students to Unikart. Earn real cash rewards for each verified friend who joins and purchases a project across 4 referral tiers.
               </p>
             </div>
 
@@ -3247,8 +3247,8 @@ export default function App() {
                     if (navigator.share) {
                       try {
                         await navigator.share({
-                          title: 'Join Uvikart with my code ' + currentAkReferralCode,
-                          text: `Explore verified college projects on Uvikart! Use my AK Referral Code ${currentAkReferralCode} to get started:`,
+                          title: 'Join Unikart with my code ' + currentAkReferralCode,
+                          text: `Explore verified college projects on Unikart! Use my AK Referral Code ${currentAkReferralCode} to get started:`,
                           url: currentReferralLink
                         });
                         showToast('Referral link shared successfully!', 'success');
@@ -3304,7 +3304,7 @@ export default function App() {
                     U
                   </div>
                   <div>
-                    <span className="font-extrabold text-base tracking-tight text-slate-900">Uvikart</span>
+                    <span className="font-extrabold text-base tracking-tight text-slate-900">Unikart</span>
                     <span className="block text-[10px] font-mono text-emerald-600 font-semibold -mt-1">
                       VERIFIED STUDENT MARKETPLACE
                     </span>
@@ -3474,7 +3474,7 @@ export default function App() {
                 U
               </div>
               <div>
-                <span className="font-extrabold text-base tracking-tight text-slate-900">Uvikart</span>
+                <span className="font-extrabold text-base tracking-tight text-slate-900">Unikart</span>
                 <span className="block text-[10px] font-mono text-emerald-600 font-semibold -mt-1">
                   VERIFIED STUDENT MARKETPLACE
                 </span>
@@ -3581,7 +3581,7 @@ export default function App() {
       <footer className={(currentRoute === 'admin' || currentRoute === 'mentor') ? 'hidden' : 'bg-slate-900 text-slate-400 py-10 px-4 border-t border-slate-800 mt-16'}>
         <div className="max-w-7xl mx-auto grid sm:grid-cols-2 lg:grid-cols-4 gap-8 text-xs">
           <div className="space-y-2">
-            <div className="font-extrabold text-white text-base">Uvikart</div>
+            <div className="font-extrabold text-white text-base">Unikart</div>
             <p className="leading-relaxed">
               Verified college & university project marketplace. Evaluate watermarked PPT previews safely and book 1-on-1 guidance sessions.
             </p>
@@ -3616,7 +3616,7 @@ export default function App() {
           </div>
         </div>
         <div className="max-w-7xl mx-auto pt-8 mt-8 border-t border-slate-800 text-center text-xs">
-          © {new Date().getFullYear()} Uvikart Marketplace. All rights reserved.
+          © {new Date().getFullYear()} Unikart Marketplace. All rights reserved.
         </div>
       </footer>
     </div>

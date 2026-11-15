@@ -1,4 +1,4 @@
-import { MentorDirectDeal, MentorStats } from './mentorTypes';
+﻿import { MentorDirectDeal, MentorStats } from './mentorTypes';
 
 export const INITIAL_MENTOR_DEALS: MentorDirectDeal[] = [
   {
@@ -18,7 +18,7 @@ export const INITIAL_MENTOR_DEALS: MentorDirectDeal[] = [
     enquiryDate: '12 Nov 2026',
     lastUpdated: '14 Nov 2026',
     notes: 'Agreed upon ₹4,499 with customized viva preparation guide and architecture PPT slides.',
-    deliveryLink: 'https://drive.google.com/drive/folders/uvikart-prj-101-mayank',
+    deliveryLink: 'https://drive.google.com/drive/folders/unikart-prj-101-mayank',
     paymentDetails: {
       transactionId: 'UPI-20261114-98421',
       paymentMode: 'UPI',
@@ -110,7 +110,7 @@ export const INITIAL_MENTOR_DEALS: MentorDirectDeal[] = [
     enquiryDate: '08 Nov 2026',
     lastUpdated: '12 Nov 2026',
     notes: 'Full ROS workspace, model weights, and 15-minute video walkthrough delivered via WhatsApp and Drive.',
-    deliveryLink: 'https://drive.google.com/drive/folders/uvikart-rover-arjun',
+    deliveryLink: 'https://drive.google.com/drive/folders/unikart-rover-arjun',
     paymentDetails: {
       transactionId: 'HDFC-IMPS-7749210',
       paymentMode: 'Bank Transfer',
@@ -125,7 +125,7 @@ export const INITIAL_MENTOR_DEALS: MentorDirectDeal[] = [
 
 export function getStoredMentorDeals(): MentorDirectDeal[] {
   try {
-    const raw = localStorage.getItem('uvikart_mentor_deals');
+    const raw = localStorage.getItem('unikart_mentor_deals');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -140,7 +140,7 @@ export function getStoredMentorDeals(): MentorDirectDeal[] {
 
 export function saveStoredMentorDeals(deals: MentorDirectDeal[]): void {
   try {
-    localStorage.setItem('uvikart_mentor_deals', JSON.stringify(deals));
+    localStorage.setItem('unikart_mentor_deals', JSON.stringify(deals));
   } catch {
     /* ignore storage errors */
   }

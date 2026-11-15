@@ -1,5 +1,5 @@
-"""
-Uvikart Backend - Student Verification API Router
+﻿"""
+Unikart Backend - Student Verification API Router
 Path: app/api/v1/verification.py
 FastAPI router for student verification lifecycle, queue management, and permanent deletion.
 """
@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 import os
 import logging
 
-logger = logging.getLogger("uvikart.verification")
+logger = logging.getLogger("unikart.verification")
 
 router = APIRouter(prefix="/admin/verification", tags=["Admin Verification"])
 

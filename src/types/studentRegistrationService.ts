@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+﻿import { supabase } from '../supabaseClient';
 import { StudentProfile } from './types';
 import { INITIAL_STUDENT } from './mockData';
 
@@ -22,7 +22,7 @@ export interface OtpRecord {
   is_verified: boolean;
 }
 
-const LOCAL_OTP_STORAGE_KEY = 'uvikart_otp_session';
+const LOCAL_OTP_STORAGE_KEY = 'unikart_otp_session';
 const OTP_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 const OTP_COOLDOWN_MS = 60 * 1000; // 60 seconds
 const MAX_OTP_ATTEMPTS = 5;
@@ -44,7 +44,7 @@ export function generateSecureOtp(): string {
 /**
  * Generate Secure Cryptographic Hash with Salt using Web Crypto API (SHA-256)
  */
-export async function hashString(value: string, salt: string = 'uvikart_salt_2026'): Promise<string> {
+export async function hashString(value: string, salt: string = 'unikart_salt_2026'): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(`${salt}:${value}`);
   if (typeof window !== 'undefined' && window.crypto?.subtle) {
@@ -341,7 +341,7 @@ export const StudentRegistrationService = {
     const randomNumericId = Math.floor(1000 + Math.random() * 9000);
     const studentIdCode = `STU-2026-${randomNumericId}`;
     const personalReferralCode = `AK${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-    const passwordSalt = `uvikart_salt_${Date.now()}`;
+    const passwordSalt = `unikart_salt_${Date.now()}`;
     const passwordHash = await hashString(input.password, passwordSalt);
 
     // 4. Insert into `verifications` table
@@ -419,14 +419,14 @@ export const StudentRegistrationService = {
       email: emailVal,
       mobile: phoneVal,
       referralCode: personalReferralCode,
-      accessToken: `uvikart_token_${randomNumericId}_${Date.now()}`,
+      accessToken: `unikart_token_${randomNumericId}_${Date.now()}`,
       authState: 'verification_pending',
       role: 'student'
     };
 
     return {
       success: true,
-      message: `Account created successfully! Welcome to Uvikart, ${input.full_name.trim()}.`,
+      message: `Account created successfully! Welcome to Unikart, ${input.full_name.trim()}.`,
       student: studentProfile
     };
   }

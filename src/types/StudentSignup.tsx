@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   GraduationCap,
@@ -144,7 +144,7 @@ export default function StudentSignup({
 
     // Database row in Supabase verifications table
     const verificationRecord = {
-      user_id: userUuid,
+      user_id: userUuid ? String(userUuid) : null,
       student_id_code: studentIdCode,
       student_name: fullName.trim(),
       email: cleanEmail,
@@ -160,7 +160,14 @@ export default function StudentSignup({
     };
 
     try {
-      await supabase.from('verifications').upsert([verificationRecord], { onConflict: 'email' });
+      const { error: upsertErr } = await supabase.from('verifications').upsert([verificationRecord], { onConflict: 'email' });
+      if (upsertErr) {
+        console.error('Verifications table upsert error, attempting update/insert fallback:', upsertErr);
+        const { error: updateErr } = await supabase.from('verifications').update(verificationRecord).eq('email', cleanEmail);
+        if (updateErr) {
+          await supabase.from('verifications').insert([verificationRecord]);
+        }
+      }
     } catch (dbErr) {
       console.warn('Verifications table upsert notice:', dbErr);
     }

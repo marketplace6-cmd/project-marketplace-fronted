@@ -352,36 +352,56 @@ export default function App() {
         });
       }
 
+      // Resolve student identity dynamically without hardcoded fallback
+      let targetEmail = student.email?.trim() || '';
+      if (!targetEmail) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        targetEmail = sessionData?.session?.user?.email?.trim() || '';
+      }
+
+      if (!targetEmail) {
+        showToast('Please sign in or enter your registered student email before submitting verification.', 'error');
+        setIdCardSubmitting(false);
+        return;
+      }
+
+      const targetName = student.fullName?.trim() || targetEmail.split('@')[0] || 'Student';
+      const targetCollege = student.collegeName?.trim() || 'University Student';
+      const targetCourse = student.department?.trim() || 'Degree Program';
+      const targetId = (student.id && student.id !== 'STU-000-000') ? student.id : `STU-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const targetReferralCode = student.referralCode || targetId;
+      const targetPhone = student.mobile?.trim() || '';
+
       // Build standard multipart FormData
       const formData = new FormData();
       formData.append('front_image', idCardFrontFile);
       if (idCardBackFile) {
         formData.append('back_image', idCardBackFile);
       }
-      formData.append('student_name', currentStudentName);
-      formData.append('email', student.email || 'student@umu.ac.in');
-      formData.append('phone', student.mobile || '7004273758');
-      formData.append('college', currentCollege);
-      formData.append('course', student.department || 'B.Tech Computer Science');
-      formData.append('student_id_code', currentStudentId);
-      formData.append('referral_code', currentAkReferralCode);
-      formData.append('user_id', currentStudentId);
+      formData.append('student_name', targetName);
+      formData.append('email', targetEmail);
+      formData.append('phone', targetPhone);
+      formData.append('college', targetCollege);
+      formData.append('course', targetCourse);
+      formData.append('student_id_code', targetId);
+      formData.append('referral_code', targetReferralCode);
+      formData.append('user_id', targetId);
 
       const isReupload = student.authState === 'verification_rejected' || (student.rejectionCount || 0) > 0;
 
       await StudentVerificationAPI.submitDual(formData, {
-        student_name: currentStudentName,
-        email: student.email || 'student@umu.ac.in',
-        phone: student.mobile || '7004273758',
-        college: currentCollege,
-        course: student.department || 'B.Tech Computer Science',
-        student_id_code: currentStudentId,
-        referral_code: currentAkReferralCode,
+        student_name: targetName,
+        email: targetEmail,
+        phone: targetPhone,
+        college: targetCollege,
+        course: targetCourse,
+        student_id_code: targetId,
+        referral_code: targetReferralCode,
         front_data_url: frontDataUrl,
         back_data_url: backDataUrl,
         front_filename: idCardFrontFile.name,
         back_filename: idCardBackFile ? idCardBackFile.name : undefined,
-        user_id: currentStudentId,
+        user_id: targetId,
         is_reupload: isReupload
       });
 

@@ -346,7 +346,7 @@ export const StudentRegistrationService = {
 
     // 4. Insert into `verifications` table
     const verificationRecord = {
-      user_id: randomNumericId,
+      user_id: String(randomNumericId),
       student_id_code: studentIdCode,
       student_name: input.full_name.trim(),
       email: emailVal,
@@ -357,7 +357,6 @@ export const StudentRegistrationService = {
       status: 'PENDING',
       rejection_count: 0,
       rejection_reason: null,
-      document_type: 'Student ID Card (Front & Back)',
       submitted_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -377,7 +376,7 @@ export const StudentRegistrationService = {
         email: emailVal,
         phone: phoneVal,
         password_hash: passwordHash,
-        is_verified: true,
+        is_verified: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }]);

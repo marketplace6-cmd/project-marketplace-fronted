@@ -104,10 +104,11 @@ export default function StudentVerificationPage({
       }
       setNotifications(recentNotifications);
       if (!current || current.status === 'REJECTED') await loadChallenge();
-      if (
-        (current?.status === 'APPROVED' || current?.status === 'VERIFIED') &&
-        (!student?.email || current?.email?.toLowerCase() === student?.email.toLowerCase() || current?.student_id_code === student?.id)
-      ) {
+      const matchesStudent = Boolean(
+        (student?.email && current?.email && current.email.toLowerCase() === student.email.toLowerCase()) ||
+        (student?.id && current?.student_id_code && current.student_id_code === student.id)
+      );
+      if ((current?.status === 'APPROVED' || current?.status === 'VERIFIED') && matchesStudent) {
         onApproved();
       }
     } catch (requestError) {

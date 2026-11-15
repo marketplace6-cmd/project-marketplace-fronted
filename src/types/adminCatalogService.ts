@@ -239,23 +239,7 @@ export const AdminCatalogAPI = {
     accessToken: string,
     filters: { search?: string; category?: string; projectType?: string; status?: string; page: number }
   ): Promise<AdminProjectList> {
-    const query = new URLSearchParams();
-    if (filters.search) query.set('search', filters.search);
-    if (filters.category) query.set('category', filters.category);
-    if (filters.projectType) query.set('project_type', filters.projectType);
-    if (filters.status) query.set('status', filters.status);
-    query.set('page', String(filters.page));
-    query.set('page_size', '50');
-    try {
-      const serverList = await request(`/admin/projects?${query.toString()}`, accessToken).then(parseProjectList);
-      if (serverList && serverList.items.length > 0) {
-        return serverList;
-      }
-    } catch {
-      // Fallback
-    }
-
-    // 1. Try Supabase
+    // 1. Live Query directly from Supabase
     try {
       let sbQuery = supabase.from('projects').select('*', { count: 'exact' });
       if (filters.category) sbQuery = sbQuery.eq('category', filters.category);
@@ -266,7 +250,12 @@ export const AdminCatalogAPI = {
       }
 
       const { data, count, error } = await sbQuery.order('id', { ascending: false });
-      if (!error && Array.isArray(data)) {
+      if (error) {
+        console.error('Failed to load projects from Supabase:', error);
+        throw new AdminCatalogError(`Database error loading catalogue: ${error.message}`, 500);
+      }
+
+      if (Array.isArray(data)) {
         const items: AdminProject[] = data.map((d: any) => ({
           id: Number(d.id),
           project_code: d.project_code || `PRJ-${d.id}`,
@@ -299,197 +288,211 @@ export const AdminCatalogAPI = {
           sold_out_projects: soldOut
         };
       }
-    } catch {
-      /* proceed to localStorage */
+    } catch (err: any) {
+      if (err instanceof AdminCatalogError) throw err;
+      throw new AdminCatalogError(err?.message || 'Failed to load projects from database.', 500);
     }
 
-    // 2. Offline fallback: use localStorage
-    const all = loadLocalCatalog();
-    const filtered = filterLocalCatalog(all, filters);
-    const active = filtered.filter((p) => p.publication_status === 'PUBLISHED').length;
-    const soldOut = filtered.filter((p) => p.publication_status === 'SOLD_OUT').length;
     return {
-      items: filtered,
-      total: filtered.length,
-      total_projects: filtered.length,
-      active_projects: active,
-      sold_out_projects: soldOut
+      items: [],
+      total: 0,
+      total_projects: 0,
+      active_projects: 0,
+      sold_out_projects: 0
     };
   },
 
   async create(accessToken: string, fields: AdminProjectInput, presentation: File | null): Promise<AdminProject> {
-    const newProject = makeLocalProject(fields);
-    if (presentation) newProject.has_ppt = true;
+    const nextCode = `PRJ-${Math.floor(1000 + Math.random() * 9000)}`;
+    const now = new Date().toISOString();
 
-    // Save to local catalog first for immediate response
+    const insertPayload = {
+      project_code: nextCode,
+      topic_name: fields.topic_name,
+      title: fields.title,
+      category: fields.category,
+      project_type: fields.project_type,
+      short_description: fields.short_description,
+      description: fields.short_description,
+      difficulty: fields.difficulty,
+      technology_stack: fields.technology_stack,
+      tech_stack: fields.technology_stack,
+      suitable_courses: fields.suitable_courses,
+      price: Number(fields.price) || 0,
+      publication_status: fields.publication_status,
+      status: fields.publication_status,
+      has_ppt: Boolean(presentation)
+    };
+
+    // 1. Direct Supabase insert FIRST - never hide errors in localStorage!
+    const { data: inserted, error: insertErr } = await supabase
+      .from('projects')
+      .insert([insertPayload])
+      .select();
+
+    if (insertErr) {
+      throw new AdminCatalogError(`Database insertion failed: ${insertErr.message}`, 400);
+    }
+
+    if (!inserted || inserted.length === 0) {
+      throw new AdminCatalogError('Database did not return the created project.', 500);
+    }
+
+    const row = inserted[0];
+    const newProject: AdminProject = {
+      id: Number(row.id),
+      project_code: row.project_code || nextCode,
+      topic_name: row.topic_name || fields.topic_name,
+      title: row.title || fields.title,
+      category: row.category || fields.category,
+      project_type: row.project_type || fields.project_type,
+      short_description: row.short_description || fields.short_description,
+      problem_statement: fields.problem_statement || '',
+      feature_categories: fields.feature_categories || [],
+      deliverables: fields.deliverables || [],
+      difficulty: fields.difficulty,
+      technology_stack: fields.technology_stack,
+      suitable_courses: fields.suitable_courses,
+      price: Number(fields.price) || 0,
+      publication_status: fields.publication_status as CatalogueStatus,
+      has_ppt: Boolean(presentation),
+      created_at: row.created_at || now,
+      updated_at: row.updated_at || now
+    };
+
+    // Update local cache and notify listeners AFTER successful database insert
     const existing = loadLocalCatalog();
-    saveLocalCatalog([newProject, ...existing]);
+    saveLocalCatalog([newProject, ...existing.filter((p) => p.id !== newProject.id)]);
     notifyCatalogChange();
 
-    try {
-      const body = new FormData();
-      Object.entries(fields).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          if (Array.isArray(value)) {
-            body.append(key, value.join(', '));
-          } else {
-            body.append(key, String(value));
-          }
-        }
-      });
-      if (presentation) body.append('presentation', presentation);
-      const serverRes = await request('/admin/projects', accessToken, { method: 'POST', body });
-      const parsed = parseProject(serverRes);
-      const updatedLocal = loadLocalCatalog().map((p) => (p.id === newProject.id ? { ...p, id: parsed.id, project_code: parsed.project_code } : p));
-      saveLocalCatalog(updatedLocal);
-      notifyCatalogChange();
-      return parsed;
-    } catch {
-      try {
-        const { data: inserted, error: insertErr } = await supabase.from('projects').insert([{
-          project_code: newProject.project_code,
-          topic_name: newProject.topic_name,
-          title: newProject.title,
-          category: newProject.category,
-          project_type: newProject.project_type,
-          short_description: newProject.short_description,
-          difficulty: newProject.difficulty,
-          technology_stack: newProject.technology_stack,
-          suitable_courses: newProject.suitable_courses,
-          price: newProject.price,
-          publication_status: newProject.publication_status,
-          has_ppt: Boolean(presentation)
-        }]).select();
-
-        if (insertErr) {
-          throw new AdminCatalogError(`Database insertion failed: ${insertErr.message}`, 400);
-        }
-
-        if (inserted && inserted.length > 0) {
-          const row = inserted[0];
-          newProject.id = Number(row.id);
-          newProject.project_code = row.project_code || newProject.project_code;
-          const updatedLocal = loadLocalCatalog().map((p) => (p.id === newProject.id ? newProject : p));
-          saveLocalCatalog(updatedLocal);
-          notifyCatalogChange();
-        }
-      } catch (dbErr: any) {
-        if (dbErr instanceof AdminCatalogError) throw dbErr;
-        throw new AdminCatalogError(dbErr?.message || 'Failed to save project to database.', 400);
-      }
-      return newProject;
-    }
+    return newProject;
   },
 
   async update(accessToken: string, projectId: number, fields: Partial<AdminProjectInput>): Promise<AdminProject> {
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString()
+    };
+    if (fields.title) { updatePayload.title = fields.title; updatePayload.topic_name = fields.title; }
+    if (fields.topic_name) updatePayload.topic_name = fields.topic_name;
+    if (fields.category) updatePayload.category = fields.category;
+    if (fields.project_type) updatePayload.project_type = fields.project_type;
+    if (fields.short_description) {
+      updatePayload.short_description = fields.short_description;
+      updatePayload.description = fields.short_description;
+    }
+    if (fields.difficulty) updatePayload.difficulty = fields.difficulty;
+    if (fields.technology_stack) {
+      updatePayload.technology_stack = fields.technology_stack;
+      updatePayload.tech_stack = fields.technology_stack;
+    }
+    if (fields.suitable_courses) updatePayload.suitable_courses = fields.suitable_courses;
+    if (fields.price !== undefined) updatePayload.price = Number(fields.price) || 0;
+    if (fields.publication_status) {
+      updatePayload.publication_status = fields.publication_status;
+      updatePayload.status = fields.publication_status;
+    }
+
+    const { data: updatedRows, error: sbUpdateErr } = await supabase
+      .from('projects')
+      .update(updatePayload)
+      .eq('id', projectId)
+      .select();
+
+    if (sbUpdateErr) {
+      throw new AdminCatalogError(`Database update failed: ${sbUpdateErr.message}`, 400);
+    }
+
     const existing = loadLocalCatalog();
     const idx = existing.findIndex((p) => p.id === projectId);
-    let updatedLocal: AdminProject | null = null;
-    if (idx !== -1) {
-      updatedLocal = {
-        ...existing[idx],
-        ...Object.fromEntries(
-          Object.entries(fields).filter(([, v]) => v !== undefined)
-        ),
-        updated_at: new Date().toISOString()
-      };
-      existing[idx] = updatedLocal;
-      saveLocalCatalog(existing);
-      notifyCatalogChange();
-    }
-
-    try {
-      const { publication_status: _ignored, ...editableFields } = fields;
-      const serverRes = await request(`/admin/projects/${projectId}`, accessToken, {
-        method: 'PUT',
-        body: JSON.stringify(editableFields)
-      });
-      const parsed = parseProject(serverRes);
-      notifyCatalogChange();
-      return parsed;
-    } catch {
-      try {
-        const { problem_statement, feature_categories, deliverables, ...safeFields } = fields as any;
-        const { error: sbUpdateErr } = await supabase.from('projects').update({
-          ...safeFields,
-          updated_at: new Date().toISOString()
-        }).eq('id', projectId);
-        if (sbUpdateErr) {
-          throw new AdminCatalogError(`Database update failed: ${sbUpdateErr.message}`, 400);
+    const updatedProject: AdminProject = (updatedRows && updatedRows[0])
+      ? {
+          id: Number(updatedRows[0].id),
+          project_code: updatedRows[0].project_code,
+          topic_name: updatedRows[0].topic_name,
+          title: updatedRows[0].title,
+          category: updatedRows[0].category,
+          project_type: updatedRows[0].project_type,
+          short_description: updatedRows[0].short_description,
+          difficulty: updatedRows[0].difficulty,
+          technology_stack: updatedRows[0].technology_stack,
+          suitable_courses: updatedRows[0].suitable_courses,
+          price: Number(updatedRows[0].price),
+          publication_status: updatedRows[0].publication_status,
+          has_ppt: Boolean(updatedRows[0].has_ppt),
+          created_at: updatedRows[0].created_at,
+          updated_at: updatedRows[0].updated_at
         }
-      } catch (dbErr: any) {
-        if (dbErr instanceof AdminCatalogError) throw dbErr;
-        throw new AdminCatalogError(dbErr?.message || 'Database update failed.', 400);
-      }
+      : idx !== -1
+      ? { ...existing[idx], ...updatePayload }
+      : { id: projectId, ...updatePayload } as AdminProject;
 
-      if (updatedLocal) return updatedLocal;
-      throw new AdminCatalogError('Project not found.', 404);
+    if (idx !== -1) {
+      existing[idx] = updatedProject;
+      saveLocalCatalog(existing);
     }
+    notifyCatalogChange();
+
+    return updatedProject;
   },
 
   async markSoldOut(accessToken: string, projectId: number): Promise<AdminProject> {
+    const { data: updatedRows, error: sbSoldOutErr } = await supabase
+      .from('projects')
+      .update({
+        publication_status: 'SOLD_OUT',
+        status: 'SOLD_OUT',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', projectId)
+      .select();
+
+    if (sbSoldOutErr) {
+      throw new AdminCatalogError(`Database update failed: ${sbSoldOutErr.message}`, 400);
+    }
+
     const existing = loadLocalCatalog();
     const idx = existing.findIndex((p) => p.id === projectId);
-    let updated: AdminProject | null = null;
-    if (idx !== -1) {
-      existing[idx] = { ...existing[idx], publication_status: 'SOLD_OUT', updated_at: new Date().toISOString() };
-      updated = existing[idx];
-      saveLocalCatalog(existing);
-      notifyCatalogChange();
-    }
-
-    try {
-      const serverRes = await request(`/admin/projects/${projectId}/sold-out`, accessToken, {
-        method: 'POST',
-        body: JSON.stringify({})
-      });
-      notifyCatalogChange();
-      return parseProject(serverRes);
-    } catch {
-      try {
-        const { error: sbSoldOutErr } = await supabase.from('projects').update({
+    const updated: AdminProject = (updatedRows && updatedRows[0])
+      ? {
+          id: Number(updatedRows[0].id),
+          project_code: updatedRows[0].project_code,
+          topic_name: updatedRows[0].topic_name,
+          title: updatedRows[0].title,
+          category: updatedRows[0].category,
+          project_type: updatedRows[0].project_type,
+          short_description: updatedRows[0].short_description,
+          difficulty: updatedRows[0].difficulty,
+          technology_stack: updatedRows[0].technology_stack,
+          suitable_courses: updatedRows[0].suitable_courses,
+          price: Number(updatedRows[0].price),
           publication_status: 'SOLD_OUT',
-          updated_at: new Date().toISOString()
-        }).eq('id', projectId);
-        if (sbSoldOutErr) {
-          throw new AdminCatalogError(`Database update failed: ${sbSoldOutErr.message}`, 400);
+          has_ppt: Boolean(updatedRows[0].has_ppt),
+          created_at: updatedRows[0].created_at,
+          updated_at: updatedRows[0].updated_at
         }
-      } catch (dbErr: any) {
-        if (dbErr instanceof AdminCatalogError) throw dbErr;
-        throw new AdminCatalogError(dbErr?.message || 'Database update failed.', 400);
-      }
+      : idx !== -1
+      ? { ...existing[idx], publication_status: 'SOLD_OUT', updated_at: new Date().toISOString() }
+      : { id: projectId, publication_status: 'SOLD_OUT' } as AdminProject;
 
-      if (updated) return updated;
-      throw new AdminCatalogError('Project not found.', 404);
+    if (idx !== -1) {
+      existing[idx] = updated;
+      saveLocalCatalog(existing);
     }
+    notifyCatalogChange();
+
+    return updated;
   },
 
   async delete(accessToken: string, projectId: number): Promise<void> {
-    try {
-      await request(`/admin/projects/${projectId}`, accessToken, {
-        method: 'DELETE'
-      });
-    } catch {
-      // Backend request bypassed if running in standalone frontend/Supabase mode
-    }
-
     // Direct permanent delete in Supabase
-    try {
-      const { error: sbDeleteErr } = await supabase
-        .from('projects')
-        .delete()
-        .eq('id', projectId);
+    const { error: sbDeleteErr } = await supabase
+      .from('projects')
+      .delete()
+      .eq('id', projectId);
 
-      if (sbDeleteErr) {
-        throw new AdminCatalogError(
-          `Database deletion failed: ${sbDeleteErr.message}`,
-          500
-        );
-      }
-    } catch (err: any) {
-      if (err instanceof AdminCatalogError) throw err;
+    if (sbDeleteErr) {
       throw new AdminCatalogError(
-        err?.message || 'Failed to delete project from database.',
+        `Database deletion failed: ${sbDeleteErr.message}`,
         500
       );
     }

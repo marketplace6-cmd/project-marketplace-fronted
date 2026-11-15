@@ -58,15 +58,34 @@ export default function ProfilePage({
    * Re-sync student profile live from Supabase strictly for this isolated user
    */
   const handleLiveRefresh = async () => {
-    if (!student.email && !student.id) return;
     setRefreshing(true);
 
     try {
-      const cleanEmail = (student.email || '').toLowerCase().trim();
+      let targetEmail = (student.email || '').toLowerCase().trim();
+      let targetId = (student.id || '').trim();
+
+      if (!targetEmail) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        targetEmail = sessionData?.session?.user?.email?.toLowerCase().trim() || '';
+      }
+
+      const orFilters: string[] = [];
+      if (targetEmail) {
+        orFilters.push(`email.ilike.${targetEmail}`, `email.eq.${targetEmail}`);
+      }
+      if (targetId && targetId !== 'STU-000-000') {
+        orFilters.push(`student_id_code.eq.${targetId}`, `user_id.eq.${targetId}`);
+      }
+
+      if (orFilters.length === 0) {
+        setRefreshing(false);
+        return;
+      }
+
       const { data: rows, error } = await supabase
         .from('verifications')
         .select('*')
-        .or(`email.ilike.${cleanEmail},email.eq.${cleanEmail},student_id_code.eq.${student.id}`)
+        .or(orFilters.join(','))
         .order('updated_at', { ascending: false })
         .limit(1);
 
@@ -105,11 +124,18 @@ export default function ProfilePage({
         }
         displayToast('Profile details updated from live server!', 'success');
       } else {
-        displayToast('Profile is up to date.', 'info');
+        // Not yet verified in database
+        if (onUpdateProfile) {
+          onUpdateProfile({
+            authState: 'verification_pending',
+            rejectionCount: 0,
+            rejectionReason: undefined
+          });
+        }
+        displayToast('Profile is up to date (Pending Verification).', 'info');
       }
     } catch (err: any) {
       console.warn('Profile refresh error:', err);
-      displayToast('Profile refreshed from local state.', 'info');
     } finally {
       setRefreshing(false);
     }

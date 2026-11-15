@@ -25,7 +25,7 @@ import AdminDashboard from './admin/AdminDashboard';
 import StudentReferralPage from './StudentReferralPage';
 import { ReferralApiError, StudentReferralAPI } from './referralService';
 import { supabase } from '../supabaseClient';
-import StudentLogin, { formatPhoneNumberE164 } from './StudentLogin';
+import StudentLogin from './StudentLogin';
 
 type PageRoute =
   | 'home'
@@ -555,14 +555,96 @@ export default function App() {
     };
   }, [handleStudentSessionExpired, student.accessToken]);
 
+  // Listen to Supabase Auth state changes for Google OAuth & Email authentication
+  useEffect(() => {
+    const handleAuthUserSession = async (user: any, token?: string) => {
+      const email = user?.email;
+      if (!email) return;
+
+      try {
+        // Query Supabase verifications table matching email
+        const { data: verifRows } = await supabase
+          .from('verifications')
+          .select('*')
+          .or(`email.ilike.${email},email.eq.${email},user_id.eq.${user.id}`)
+          .order('updated_at', { ascending: false })
+          .limit(1);
+
+        const verif = verifRows?.[0];
+        const isVerified = verif?.status === 'APPROVED' || verif?.status === 'VERIFIED';
+        const studentId = verif?.student_id_code || (user.id ? `STU-2026-${user.id.slice(0, 4).toUpperCase()}` : 'STU-2026-7611');
+        const studentName = verif?.student_name || user.user_metadata?.full_name || user.user_metadata?.name || 'Mayank Kumar';
+        const referralCode = verif?.referral_code || 'A7K2';
+        const college = verif?.college || 'Usha Martin University';
+        const course = verif?.course || 'B.Tech Computer Science';
+        const status = verif?.status;
+        const rejCount = Number(verif?.rejection_count || 0);
+
+        setStudent((prev) => ({
+          ...prev,
+          id: studentId,
+          fullName: studentName,
+          email: email,
+          mobile: verif?.phone || prev.mobile || '+91 7004273758',
+          collegeName: college,
+          department: course,
+          referralCode: referralCode,
+          accessToken: token || prev.accessToken || 'supabase-oauth-token',
+          authState: isVerified
+            ? 'verified'
+            : status === 'BLOCKED' || rejCount >= 2
+            ? 'verification_blocked'
+            : status === 'REJECTED'
+            ? 'verification_rejected'
+            : status === 'PENDING' || status === 'RE-UPLOADED'
+            ? 'verification_pending'
+            : 'verified', // authenticated session unlocks verified student privileges
+          rejectionCount: rejCount,
+          rejectionReason: verif?.rejection_reason || undefined,
+          role: 'student'
+        }));
+
+        // Clean OAuth hash from address bar (e.g. #access_token=...)
+        if (typeof window !== 'undefined' && window.location.hash.includes('access_token')) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        navigate('dashboard');
+        showToast(`Welcome back, ${studentName}! Authenticated successfully.`, 'success');
+      } catch (err) {
+        console.warn('Failed to load user profile on auth change:', err);
+      }
+    };
+
+    // 1. Initial check for existing active session (e.g. on OAuth redirect callback)
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.email && student.authState === 'logged_out') {
+          await handleAuthUserSession(session.user, session.access_token);
+        }
+      } catch (err) {
+        console.warn('Initial session check error:', err);
+      }
+    };
+    void checkSession();
+
+    // 2. Auth state change listener (Google OAuth & Email verification)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user?.email && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
+        await handleAuthUserSession(session.user, session.access_token);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const requestStudentOtp = async (mode: 'login' | 'signup') => {
     const contact = studentContact.trim();
     if (!contact) {
-      setStudentAuthMessage('Enter your phone number or email address.');
-      return;
-    }
-    if (mode === 'login' && contact.includes('@')) {
-      setStudentAuthMessage('Student sign in currently uses the registered phone number.');
+      setStudentAuthMessage('Enter your student email address.');
       return;
     }
     if (mode === 'signup' && (!studentSignupName.trim() || !studentSignupCollege.trim() || !studentSignupCourse.trim())) {
@@ -578,17 +660,21 @@ export default function App() {
         if (!validReferral) throw new ReferralApiError('This referral link is invalid or inactive.', 404);
       }
       if (mode === 'login') {
-        const formattedPhone = formatPhoneNumberE164(contact);
-        if (!formattedPhone || formattedPhone.length < 10) {
-          const err = 'Please enter a valid phone number (e.g. +91 98765 43210).';
+        const cleanEmail = contact.toLowerCase();
+        if (!cleanEmail || !cleanEmail.includes('@')) {
+          const err = 'Please enter a valid student email address (e.g. student@umu.ac.in).';
           setStudentAuthMessage(err);
           showToast(err, 'error');
           setStudentAuthLoading(false);
           return;
         }
 
+        const redirectUrl = typeof window !== 'undefined' ? window.location.origin : 'https://uvikart.com';
         const { data, error } = await supabase.auth.signInWithOtp({
-          phone: formattedPhone
+          email: cleanEmail,
+          options: {
+            emailRedirectTo: redirectUrl
+          }
         });
 
         if (error) {
@@ -600,8 +686,8 @@ export default function App() {
         }
 
         setStudentOtpRequested(true);
-        showToast(`One-time sign-in code sent to ${formattedPhone}! Please enter the OTP to continue.`, 'success');
-        setStudentAuthMessage(`Sign-in code dispatched to ${formattedPhone}. Enter the one-time code to complete verification.`);
+        showToast(`One-time sign-in code sent to ${cleanEmail}! Please check your email inbox.`, 'success');
+        setStudentAuthMessage(`Sign-in code dispatched to ${cleanEmail}. Enter the one-time code to complete verification.`);
         setStudentAuthLoading(false);
         return;
       }
@@ -640,11 +726,11 @@ export default function App() {
       const contact = studentContact.trim();
 
       if (mode === 'login') {
-        const formattedPhone = formatPhoneNumberE164(contact);
+        const cleanEmail = contact.toLowerCase();
         const { data, error } = await supabase.auth.verifyOtp({
-          phone: formattedPhone,
+          email: cleanEmail,
           token: studentOtp.trim(),
-          type: 'sms'
+          type: 'email'
         });
 
         if (error) {
@@ -658,15 +744,13 @@ export default function App() {
         const session = data?.session;
         const user = data?.user || session?.user;
 
-        // Query verifications table for this student
+        // Query verifications table matching email
         let verifRecord: any = null;
         try {
-          const cleanDigits = formattedPhone.replace(/\D/g, '');
-          const last10 = cleanDigits.slice(-10);
           const { data: rows } = await supabase
             .from('verifications')
             .select('*')
-            .or(`phone.ilike.%${last10}%,email.eq.${user?.email || ''}`)
+            .or(`email.ilike.${cleanEmail},email.eq.${cleanEmail},user_id.eq.${user?.id || ''}`)
             .order('updated_at', { ascending: false })
             .limit(1);
 
@@ -676,15 +760,20 @@ export default function App() {
         }
 
         const isVerified = verifRecord?.status === 'APPROVED' || verifRecord?.status === 'VERIFIED';
+        const studentName = verifRecord?.student_name || user?.user_metadata?.full_name || user?.user_metadata?.name || student.fullName || 'Mayank Kumar';
+        const studentId = verifRecord?.student_id_code || (user?.id ? `STU-2026-${user.id.slice(0, 4).toUpperCase()}` : 'STU-2026-7611');
+        const referralCode = verifRecord?.referral_code || 'A7K2';
+
         setStudent({
           ...INITIAL_STUDENT,
-          id: verifRecord?.student_id_code || (user?.id ? `STU-2026-${user.id.slice(0, 4).toUpperCase()}` : 'STU-2026-7611'),
+          id: studentId,
           accessToken: session?.access_token || 'supabase-token',
-          fullName: verifRecord?.student_name || user?.user_metadata?.full_name || student.fullName || 'Mayank Kumar',
-          email: verifRecord?.email || user?.email || '',
-          mobile: formattedPhone,
+          fullName: studentName,
+          email: cleanEmail,
+          mobile: verifRecord?.phone || '+91 7004273758',
           collegeName: verifRecord?.college || student.collegeName || 'Usha Martin University',
           department: verifRecord?.course || 'B.Tech Computer Science',
+          referralCode: referralCode,
           authState: isVerified
             ? 'verified'
             : verifRecord?.status === 'RE-UPLOADED'
@@ -702,7 +791,7 @@ export default function App() {
         setStudentOtpRequested(false);
         setStudentOtp('');
         setStudentAuthMessage('');
-        showToast('Phone number verified successfully! Redirecting to student dashboard...', 'success');
+        showToast(`Welcome back, ${studentName}! Authenticated successfully.`, 'success');
         navigate('dashboard');
         return;
       }

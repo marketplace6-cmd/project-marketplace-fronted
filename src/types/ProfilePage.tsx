@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
   GraduationCap,
@@ -114,6 +114,18 @@ export default function ProfilePage({
       setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    void handleLiveRefresh();
+
+    const handleUpdate = () => {
+      void handleLiveRefresh();
+    };
+    window.addEventListener('unikart:verification_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('unikart:verification_updated', handleUpdate);
+    };
+  }, [student.id, student.email]);
 
   const rejectionRemaining = 2 - Math.min(2, student.rejectionCount || 0);
 

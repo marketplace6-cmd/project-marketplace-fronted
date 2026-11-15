@@ -155,7 +155,6 @@ export default function StudentSignup({
       status: 'PENDING',
       rejection_count: 0,
       rejection_reason: null,
-      document_type: 'Student ID Card (Front & Back)',
       submitted_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };

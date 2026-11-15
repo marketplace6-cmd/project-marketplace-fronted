@@ -176,7 +176,7 @@ export default function AdminVerificationPage({
   const [rejectionReason, setRejectionReason] = useState('');
   const [decisionError, setDecisionError] = useState('');
   const [savingDecision, setSavingDecision] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | string | null>(null);
   const [notice, setNotice] = useState('');
 
   // Intelligent Queue Dynamic Ranking (RE-UPLOADED top -> PENDING -> REJECTED -> BLOCKED -> APPROVED)

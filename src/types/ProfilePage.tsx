@@ -15,7 +15,9 @@ import {
   Share2,
   FileText,
   Clock,
-  Sparkles
+  Sparkles,
+  CheckCircle2,
+  Lock
 } from 'lucide-react';
 import { StudentProfile } from './types';
 import { supabase } from '../supabaseClient';
@@ -127,10 +129,30 @@ export default function ProfilePage({
             {student.fullName ? student.fullName.charAt(0).toUpperCase() : 'U'}
           </div>
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="text-[11px] font-extrabold tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-white/20 border border-white/25">
                 Isolated Student Account
               </span>
+              {student.authState === 'verified' ? (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-400/25 border border-emerald-300/40 text-emerald-100 flex items-center gap-1">
+                  <CheckCircle2 size={12} className="text-emerald-300" />
+                  Verified Student
+                </span>
+              ) : student.authState === 'verification_pending' ? (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/25 border border-amber-300/40 text-amber-100 flex items-center gap-1 shadow-2xs">
+                  <Clock size={12} className="text-amber-300 animate-spin" />
+                  Verification Pending • Under Admin Review
+                </span>
+              ) : student.authState === 'verification_rejected' ? (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-400/25 border border-rose-300/40 text-rose-100 flex items-center gap-1">
+                  <AlertCircle size={12} className="text-rose-300" />
+                  Action Required
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white/10 border border-white/20 text-purple-200">
+                  Unverified
+                </span>
+              )}
               <span className="text-xs text-purple-200">
                 • {student.email}
               </span>
@@ -167,7 +189,31 @@ export default function ProfilePage({
         </div>
       </div>
 
-      {/* 2. Rejection Banner if verification rejected */}
+      {/* 2. Verification Pending Banner */}
+      {student.authState === 'verification_pending' && (
+        <div className="bg-amber-50/90 border-2 border-amber-300 rounded-2xl p-4 sm:p-5 text-xs text-amber-950 flex items-start justify-between gap-3 shadow-xs animate-in fade-in duration-200">
+          <div className="flex items-start gap-3">
+            <Clock size={20} className="text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+            <div>
+              <h4 className="font-bold text-sm text-amber-900">Verification Pending • Under Admin Review</h4>
+              <p className="mt-1 text-amber-800 leading-relaxed">
+                Your submitted student ID card documents (Front & Back) have been securely received and are currently queued for administrator review. Full student privileges, verified downloads, and 5 free PPT slide previews will unlock immediately once approved.
+              </p>
+            </div>
+          </div>
+          {onNavigateVerification && (
+            <button
+              type="button"
+              onClick={onNavigateVerification}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shrink-0 transition-colors shadow-2xs whitespace-nowrap"
+            >
+              Check Status
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 3. Rejection Banner if verification rejected */}
       {student.authState === 'verification_rejected' && (
         <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 sm:p-5 text-xs text-rose-900 flex items-start justify-between gap-3 shadow-xs">
           <div className="flex items-start gap-3">
@@ -248,12 +294,12 @@ export default function ProfilePage({
             {student.authState === 'verified' ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-full">
                 <CheckCircle2 size={12} className="text-emerald-600" />
-                Verified
+                Verified Student
               </span>
             ) : student.authState === 'verification_pending' ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full">
-                <Clock size={12} className="text-amber-600" />
-                Pending
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300 px-3 py-1 rounded-full shadow-2xs">
+                <Clock size={12} className="text-amber-600 animate-spin" />
+                Verification Pending • Under Admin Review
               </span>
             ) : student.authState === 'verification_rejected' ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-full">
@@ -311,30 +357,46 @@ export default function ProfilePage({
           </div>
 
           <p className="text-xs text-slate-600">
-            Every registered student receives 5 complimentary PPT slide evaluations to review projects before purchase.
+            {student.authState === 'verified'
+              ? 'Every verified student receives 5 complimentary PPT slide evaluations to review projects before purchase.'
+              : 'Complete your student verification to unlock 5 complimentary PPT slide evaluations.'}
           </p>
 
-          <div className="p-3.5 bg-rose-50/60 border border-rose-200 rounded-2xl flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              {[...Array(5)].map((_, i) => (
-                <Heart
-                  key={i}
-                  size={18}
-                  className={
-                    i < (student.previewStats?.remainingPreviews ?? 5)
-                      ? 'fill-rose-500 text-rose-500 animate-pulse'
-                      : 'text-slate-300 fill-slate-200'
-                  }
-                />
-              ))}
+          {student.authState === 'verified' ? (
+            <div className="p-3.5 bg-rose-50/60 border border-rose-200 rounded-2xl flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                {[...Array(5)].map((_, i) => (
+                  <Heart
+                    key={i}
+                    size={18}
+                    className={
+                      i < (student.previewStats?.remainingPreviews ?? 5)
+                        ? 'fill-rose-500 text-rose-500 animate-pulse'
+                        : 'text-slate-300 fill-slate-200'
+                    }
+                  />
+                ))}
+              </div>
+              <span className="font-extrabold text-sm text-rose-950">
+                {student.previewStats?.remainingPreviews ?? 5} / 5 Available
+              </span>
             </div>
-            <span className="font-extrabold text-sm text-rose-950">
-              {student.previewStats?.remainingPreviews ?? 5} / 5 Available
-            </span>
-          </div>
+          ) : (
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-600 text-xs font-medium">
+                <Lock size={15} className="text-amber-600" />
+                <span>5 PPT Preview Credits (Locked)</span>
+              </div>
+              <span className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                Unlocked on Approval
+              </span>
+            </div>
+          )}
 
           <div className="text-[11px] text-slate-500 pt-1 text-center">
-            Isolated server-tracked credits per student account.
+            {student.authState === 'verified'
+              ? 'Isolated server-tracked credits per student account.'
+              : 'Awaiting admin verification to activate.'}
           </div>
         </div>
       </div>
@@ -379,7 +441,17 @@ export default function ProfilePage({
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
             <div className="text-slate-500 font-medium">Account Role</div>
-            <div className="font-bold text-emerald-700 text-sm mt-1 uppercase">Verified Student</div>
+            <div className="font-bold text-sm mt-1 uppercase">
+              {student.authState === 'verified' ? (
+                <span className="text-emerald-700">Verified Student</span>
+              ) : student.authState === 'verification_pending' ? (
+                <span className="text-amber-700">Verification Pending</span>
+              ) : student.authState === 'verification_rejected' ? (
+                <span className="text-rose-700">Re-upload Required</span>
+              ) : (
+                <span className="text-slate-600">Registered Student</span>
+              )}
+            </div>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">

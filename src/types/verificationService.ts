@@ -1419,6 +1419,73 @@ export const AdminVerificationAPI = {
         }
       }));
     }
+  },
+
+  /**
+   * Delete a student verification submission permanently:
+   * Removes from Supabase verifications table, cleans up storage files, and clears local queue.
+   */
+  async deleteVerification(item: VerificationQueueItem, accessToken?: string): Promise<void> {
+    // 1. Delete image files from storage
+    await Promise.allSettled([
+      deleteSupabaseStorageFile(item.front_image_url || item.front_data_url),
+      deleteSupabaseStorageFile(item.back_image_url || item.back_data_url)
+    ]);
+
+    // 2. Inform backend if endpoint exists
+    try {
+      await fetch(`${verificationApiBaseUrl}/admin/verification/${item.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        }
+      });
+    } catch {
+      /* ignore */
+    }
+
+    // 3. Delete from Supabase verifications table
+    try {
+      const orConditions: string[] = [];
+      if (item.id) orConditions.push(`id.eq.${item.id}`);
+      if (item.user_id) orConditions.push(`user_id.eq.${item.user_id}`);
+      if (item.student_id_code) orConditions.push(`student_id_code.eq.${item.student_id_code}`);
+      if (item.email) orConditions.push(`email.eq.${item.email}`);
+
+      if (orConditions.length > 0) {
+        await supabase.from('verifications').delete().or(orConditions.join(','));
+      }
+    } catch (err) {
+      console.warn('Supabase verification deletion error:', err);
+    }
+
+    // 4. Remove from local queue
+    const all = loadLocalVerifications();
+    const filtered = all.filter(
+      (v) =>
+        String(v.id) !== String(item.id) &&
+        String(v.student_id_code) !== String(item.student_id_code) &&
+        (!item.email || v.email !== item.email)
+    );
+    saveLocalVerifications(filtered);
+
+    // 5. Clean up cached verification status for that user
+    if (item.email) {
+      try {
+        localStorage.removeItem(`cpm_verif_${item.email.toLowerCase()}`);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('uvikart:verification_deleted', {
+          detail: { verificationId: item.id, student_id_code: item.student_id_code }
+        })
+      );
+    }
   }
 };
 

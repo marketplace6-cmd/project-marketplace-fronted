@@ -116,9 +116,9 @@ export default function App() {
           orList.push(`id.eq.${numId}`);
         }
 
-        const query = orList.length > 0
-          ? supabase.from('verifications').select('*').or(orList.join(','))
-          : supabase.from('verifications').select('*');
+        if (orList.length === 0) return;
+
+        const query = supabase.from('verifications').select('*').or(orList.join(','));
 
         const { data, error } = await query
           .order('updated_at', { ascending: false })
@@ -602,7 +602,7 @@ export default function App() {
             ? 'verification_rejected'
             : status === 'PENDING' || status === 'RE-UPLOADED'
             ? 'verification_pending'
-            : 'verified', // authenticated session unlocks verified student privileges
+            : 'verification_pending',
           rejectionCount: rejCount,
           rejectionReason: verif?.rejection_reason || undefined,
           role: 'student'
@@ -789,7 +789,7 @@ export default function App() {
             ? 'verification_rejected'
             : verifRecord?.status === 'BLOCKED'
             ? 'verification_blocked'
-            : 'verified',
+            : 'verification_pending',
           role: 'student'
         });
 

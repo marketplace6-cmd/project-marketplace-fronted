@@ -104,7 +104,12 @@ export default function StudentVerificationPage({
       }
       setNotifications(recentNotifications);
       if (!current || current.status === 'REJECTED') await loadChallenge();
-      if (current?.status === 'APPROVED' || current?.status === 'VERIFIED') onApproved();
+      if (
+        (current?.status === 'APPROVED' || current?.status === 'VERIFIED') &&
+        (!student?.email || current?.email?.toLowerCase() === student?.email.toLowerCase() || current?.student_id_code === student?.id)
+      ) {
+        onApproved();
+      }
     } catch (requestError) {
       if (requestError instanceof VerificationApiError && (requestError.status === 401 || requestError.status === 403)) {
         onSessionExpired();
@@ -225,49 +230,72 @@ export default function StudentVerificationPage({
         });
       }
 
+      const effectiveStudentId = student?.id || (studentEmail ? `STU-2026-${studentEmail.slice(0, 4).toUpperCase()}` : 'STU-2026-STU');
+      const effectiveReferralCode = student?.referralCode || student?.id || effectiveStudentId;
+      const cleanEmail = studentEmail.trim() || student?.email || '';
+      const cleanCollege = studentCollege.trim() || student?.collegeName || 'University Student';
+      const cleanCourse = studentCourse.trim() || student?.department || 'Degree Program';
+      const cleanName = studentName.trim() || student?.fullName || 'Student';
+
       // 2. Build FormData
       const formData = new FormData();
       formData.append('front_image', file);
       if (backFile) formData.append('back_image', backFile);
-      formData.append('student_name', studentName.trim() || student?.fullName || 'Student');
-      formData.append('email', studentEmail.trim() || student?.email || '');
+      formData.append('student_name', cleanName);
+      formData.append('email', cleanEmail);
       formData.append('phone', paymentPhone);
-      formData.append('college', studentCollege.trim() || student?.collegeName || 'College / University');
-      formData.append('course', studentCourse.trim() || 'Degree / Department');
-      formData.append('user_id', student?.id || '');
-      formData.append('student_id_code', student?.id || 'STU-2026-0001');
-      formData.append('referral_code', 'A7K2');
+      formData.append('college', cleanCollege);
+      formData.append('course', cleanCourse);
+      formData.append('user_id', effectiveStudentId);
+      formData.append('student_id_code', effectiveStudentId);
+      formData.append('referral_code', effectiveReferralCode);
 
       const isReupload = verification?.status === 'REJECTED' || (verification?.rejection_count || 0) > 0;
 
       await StudentVerificationAPI.submitDual(formData, {
-        student_name: studentName.trim() || student?.fullName || 'Student',
-        email: studentEmail.trim() || student?.email || 'student@umu.ac.in',
+        student_name: cleanName,
+        email: cleanEmail,
         phone: paymentPhone,
-        college: studentCollege.trim() || student?.collegeName || 'Usha Martin University',
-        course: studentCourse.trim() || 'B.Tech Computer Science',
-        student_id_code: student?.id || 'STU-2026-0001',
-        referral_code: 'A7K2',
+        college: cleanCollege,
+        course: cleanCourse,
+        student_id_code: effectiveStudentId,
+        referral_code: effectiveReferralCode,
         front_data_url: frontDataUrl,
         back_data_url: backDataUrl,
         front_filename: file.name,
         back_filename: backFile ? backFile.name : undefined,
-        user_id: student?.id || 'STU-2026-0001',
+        user_id: effectiveStudentId,
         is_reupload: isReupload
       });
 
       setMessage(
         isReupload
-          ? 'Corrected ID documents re-submitted! Prioritized at top of admin queue.'
-          : 'Your ID documents were submitted and are pending review.'
+          ? 'Corrected ID documents re-submitted! Prioritized at top of admin review queue.'
+          : 'Your ID documents were submitted successfully and are strictly pending admin review.'
       );
       setFile(null);
       setFilePreview('');
       setBackFile(null);
       setBackFilePreview('');
       setPuzzleAnswer('');
-      setLoading(true);
-      await refresh();
+      setLoading(false);
+      setVerification({
+        id: typeof student?.id === 'number' ? student.id : 1,
+        status: isReupload ? 'RE-UPLOADED' : 'PENDING',
+        payment_phone: paymentPhone,
+        rejection_reason: null,
+        rejection_count: isReupload ? 1 : 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        document_name: file.name,
+        student_name: cleanName,
+        college: cleanCollege,
+        course: cleanCourse,
+        email: cleanEmail,
+        phone: paymentPhone,
+        front_image_url: frontDataUrl,
+        back_image_url: backDataUrl || undefined
+      });
     } catch (requestError) {
       if (requestError instanceof VerificationApiError && (requestError.status === 401 || requestError.status === 403)) {
         onSessionExpired();

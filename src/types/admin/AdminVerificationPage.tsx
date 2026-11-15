@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   RotateCcw,
   Search,
+  Trash2,
   X,
   ZoomIn,
   ZoomOut,
@@ -94,7 +95,7 @@ function DocumentThumbnail({
   const isRealImage = Boolean(realImageSrc);
   const displayDocName = (item.document_name && !item.document_name.includes('document_upload.png') && !item.document_name.startsWith('data:'))
     ? item.document_name
-    : '16.jpg';
+    : 'Front ID Card';
 
   return (
     <button
@@ -175,6 +176,7 @@ export default function AdminVerificationPage({
   const [rejectionReason, setRejectionReason] = useState('');
   const [decisionError, setDecisionError] = useState('');
   const [savingDecision, setSavingDecision] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
 
   // Intelligent Queue Dynamic Ranking (RE-UPLOADED top -> PENDING -> REJECTED -> BLOCKED -> APPROVED)
@@ -398,6 +400,30 @@ export default function AdminVerificationPage({
     }
   };
 
+  const handleDeleteVerification = async (item: VerificationQueueItem) => {
+    const studentIdentifier = item.student_name || item.student_id_code || item.email || 'this student';
+    const confirmed = window.confirm(
+      `Permanently delete verification submission for "${studentIdentifier}"?\n\nThis will remove the verification record from the queue and purge any uploaded front and back ID images from server storage.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(item.id);
+    setError('');
+    try {
+      await AdminVerificationAPI.deleteVerification(item, accessToken);
+      setNotice(`Verification record and uploaded files permanently deleted for ${studentIdentifier}.`);
+      if (selected && (selected.id === item.id || selected.user_id === item.user_id)) {
+        setSelected(null);
+      }
+      await refresh();
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete verification record.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const openDetailModal = (item: VerificationQueueItem) => {
     const front = item.front_image_url || item.front_data_url || SAMPLE_STUDENT_ID_FRONT;
     const back = item.back_image_url || item.back_data_url || SAMPLE_STUDENT_ID_BACK;
@@ -607,7 +633,7 @@ export default function AdminVerificationPage({
                 {rankedItems.map((item) => {
                   const isReuploaded = item.status === 'RE-UPLOADED';
                   const studentIdDisplay = item.student_id_code || (item.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(item.user_id).padStart(4, '0')}`);
-                  const referralCodeDisplay = item.referral_code || 'A7K2';
+                  const referralCodeDisplay = item.referral_code || item.student_id_code || studentIdDisplay;
 
                   return (
                     <tr
@@ -684,14 +710,21 @@ export default function AdminVerificationPage({
                         </span>
                       </td>
 
-                      {/* 9. Action Button */}
+                      {/* 9. Action Button (Permanent Delete) */}
                       <td className="px-4 py-3.5 text-center">
                         <button
                           type="button"
-                          onClick={() => openDetailModal(item)}
-                          className="rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3.5 py-2 font-bold text-xs border border-indigo-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+                          disabled={deletingId === item.id}
+                          onClick={() => void handleDeleteVerification(item)}
+                          className="rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 px-3 py-1.5 font-bold text-xs border border-rose-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs disabled:opacity-50"
+                          title="Permanently delete record and storage files"
                         >
-                          <Eye size={13} /> Inspect & Verify
+                          {deletingId === item.id ? (
+                            <LoaderCircle size={13} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={13} className="text-rose-600" />
+                          )}
+                          <span>Delete</span>
                         </button>
                       </td>
                     </tr>
@@ -910,7 +943,7 @@ export default function AdminVerificationPage({
                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                         }`}
                       >
-                        <Eye size={12} /> ID Card (Front Side) • 16.jpg
+                        <Eye size={12} /> ID Card (Front Side) • {selected.document_name || 'Front ID'}
                       </button>
                       <button
                         type="button"
@@ -925,7 +958,7 @@ export default function AdminVerificationPage({
                             : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                         }`}
                       >
-                        <Eye size={12} /> ID Card (Back Side) • 17.jpg
+                        <Eye size={12} /> ID Card (Back Side) • {selected.back_filename || (selected.back_image_url || selected.back_data_url ? 'Back ID' : 'Back Not Submitted')}
                       </button>
                     </div>
 
@@ -1031,20 +1064,20 @@ export default function AdminVerificationPage({
                   )}
 
                   {!rejectOpen ? (
-                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-                      <div className="text-xs text-slate-500 text-center sm:text-left">
-                        <span className="font-bold text-slate-900 block sm:inline">Administrative Action: </span>
-                        Verify the document authenticity and match with student details before confirming.
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                      <div className="text-xs text-slate-500 text-left">
+                        <span className="font-bold text-slate-900 inline">Administrative Action: </span>
+                        Verify document authenticity and match with student details before confirming.
                       </div>
 
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
                           onClick={() => {
                             setDecisionError('');
                             setRejectOpen(true);
                           }}
-                          className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 shadow-2xs"
+                          className="px-4 py-2.5 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 shadow-2xs whitespace-nowrap shrink-0"
                         >
                           <XCircle size={15} /> Reject with Reason
                         </button>
@@ -1053,7 +1086,7 @@ export default function AdminVerificationPage({
                           type="button"
                           disabled={savingDecision}
                           onClick={() => void handleQuickApprove(selected)}
-                          className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
+                          className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors inline-flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50 whitespace-nowrap shrink-0"
                         >
                           {savingDecision ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
                           Approve Verification

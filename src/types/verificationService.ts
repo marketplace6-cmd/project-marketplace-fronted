@@ -3,7 +3,7 @@ import { SAMPLE_STUDENT_ID_FRONT, SAMPLE_STUDENT_ID_BACK } from './mockIdCards';
 
 export interface VerificationQueueItem {
   id: number;
-  user_id: number;
+  user_id: string | number;
   student_name: string;
   email: string | null;
   phone: string | null;
@@ -32,7 +32,8 @@ export interface VerificationQueue {
 }
 
 export interface StudentVerificationStatus {
-  id: number;
+  id: number | string;
+  user_id?: string | number;
   status: 'PENDING' | 'RE-UPLOADED' | 'APPROVED' | 'REJECTED' | 'VERIFIED' | 'BLOCKED';
   payment_phone: string;
   rejection_reason: string | null;
@@ -472,27 +473,29 @@ export const StudentVerificationAPI = {
       const studentEmail = studentDetails?.email || null;
       const studentCollege = studentDetails?.college || 'University';
       const studentCourse = studentDetails?.course || 'Degree';
-      const userId = Number(studentDetails?.user_id) || Math.floor(1000 + Math.random() * 9000);
+      const userId = String(studentDetails?.user_id || `STU-2026-${Math.floor(1000 + Math.random() * 9000)}`);
 
       const newStatus: StudentVerificationStatus = {
         id: userId,
+        user_id: userId,
         status: 'PENDING',
         payment_phone: paymentPhone,
         rejection_reason: null,
         created_at: now,
         updated_at: now,
-        document_name: documentDataUrl || file.name,
+        document_name: file.name,
         student_name: studentName,
         college: studentCollege,
         course: studentCourse,
         email: studentEmail,
-        phone: paymentPhone
+        phone: paymentPhone,
+        front_image_url: documentDataUrl
       };
       saveLocalStudentVerification(newStatus);
 
       // Save to Supabase verifications
       try {
-        await supabase.from('verifications').insert([{
+        const { error: sbErr } = await supabase.from('verifications').insert([{
           user_id: userId,
           student_name: studentName,
           email: studentEmail,
@@ -501,10 +504,17 @@ export const StudentVerificationAPI = {
           course: studentCourse,
           status: 'PENDING',
           payment_phone: paymentPhone,
-          document_name: documentDataUrl || file.name
+          document_name: file.name,
+          front_image_url: documentDataUrl,
+          submitted_at: now,
+          updated_at: now
         }]);
-      } catch {
-        /* ignore */
+        if (sbErr) {
+          throw new VerificationApiError(`Database submission failed: ${sbErr.message}`, 400);
+        }
+      } catch (err: any) {
+        if (err instanceof VerificationApiError) throw err;
+        throw new VerificationApiError(err?.message || 'Failed to submit verification to database.', 400);
       }
     }
   },
@@ -528,12 +538,13 @@ export const StudentVerificationAPI = {
     }
   ): Promise<void> {
     const now = new Date().toISOString();
-    const userId = Number(details.user_id) || (details.student_id_code === 'STU-2026-0001' ? 1346 : Math.floor(1000 + Math.random() * 9000));
+    const userId = String(details.user_id || details.student_id_code || details.email);
+    const numericId = Number(details.user_id) || Math.floor(1000 + Math.random() * 9000);
 
     // 1. Check existing verification to detect Re-upload & identify old storage files to delete
     const localItems = loadLocalVerifications();
     const existingIdx = localItems.findIndex(
-      (i) => i.email === details.email || i.student_id_code === details.student_id_code || i.user_id === userId
+      (i) => i.email === details.email || i.student_id_code === details.student_id_code || String(i.user_id) === userId
     );
     const existingItem = existingIdx !== -1 ? localItems[existingIdx] : null;
 
@@ -543,13 +554,13 @@ export const StudentVerificationAPI = {
     try {
       const { data: existingSb } = await supabase
         .from('verifications')
-        .select('status, rejection_count, front_image_url, back_image_url, front_data_url, back_data_url')
+        .select('status, rejection_count, front_image_url, back_image_url')
         .or(`email.eq.${details.email},student_id_code.eq.${details.student_id_code},user_id.eq.${userId}`)
         .maybeSingle();
 
       if (existingSb) {
-        oldFrontUrl = existingSb.front_image_url || existingSb.front_data_url || oldFrontUrl;
-        oldBackUrl = existingSb.back_image_url || existingSb.back_data_url || oldBackUrl;
+        oldFrontUrl = existingSb.front_image_url || oldFrontUrl;
+        oldBackUrl = existingSb.back_image_url || oldBackUrl;
       }
     } catch {
       /* continue */
@@ -608,7 +619,7 @@ export const StudentVerificationAPI = {
 
     // 4. Persist in localStorage queue with Priority Ranking (Re-uploaded at top)
     const newItem: VerificationQueueItem = {
-      id: userId,
+      id: numericId,
       user_id: userId,
       student_name: details.student_name,
       email: details.email,
@@ -643,6 +654,7 @@ export const StudentVerificationAPI = {
 
     const studentStatus: StudentVerificationStatus = {
       id: userId,
+      user_id: userId,
       status: newStatus,
       payment_phone: details.phone,
       rejection_reason: null,
@@ -688,43 +700,48 @@ export const StudentVerificationAPI = {
     }
 
     // 5. Update Supabase verifications row cleanly with new images & RE-UPLOADED status
-    try {
-      const record = {
-        user_id: userId,
-        student_name: details.student_name,
-        email: details.email,
-        phone: details.phone,
-        college: details.college,
-        course: details.course,
-        student_id_code: details.student_id_code,
-        referral_code: details.referral_code,
-        status: newStatus,
-        rejection_reason: null,
-        rejection_count: currentRejectionCount,
-        payment_phone: details.phone,
-        document_name: details.front_filename,
-        document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
-        front_image_url: details.front_data_url,
-        back_image_url: details.back_data_url || null,
-        front_data_url: details.front_data_url,
-        back_data_url: details.back_data_url || null,
-        submitted_at: now,
-        updated_at: now
-      };
+    const record = {
+      user_id: userId,
+      student_name: details.student_name,
+      email: details.email,
+      phone: details.phone,
+      college: details.college,
+      course: details.course,
+      student_id_code: details.student_id_code,
+      referral_code: details.referral_code,
+      status: newStatus,
+      rejection_reason: null,
+      rejection_count: currentRejectionCount,
+      payment_phone: details.phone,
+      document_name: details.front_filename,
+      front_image_url: details.front_data_url,
+      back_image_url: details.back_data_url || null,
+      submitted_at: now,
+      updated_at: now
+    };
 
-      const { error } = await supabase.from('verifications').upsert([record], { onConflict: 'email' });
-      if (error) {
+    try {
+      const { error: upsertError } = await supabase
+        .from('verifications')
+        .upsert([record], { onConflict: 'email' });
+
+      if (upsertError) {
         // Fallback: update or insert
         const { error: updateError } = await supabase
           .from('verifications')
           .update(record)
           .or(`email.eq.${details.email},student_id_code.eq.${details.student_id_code},user_id.eq.${userId}`);
+
         if (updateError) {
-          await supabase.from('verifications').insert([record]);
+          const { error: insertError } = await supabase.from('verifications').insert([record]);
+          if (insertError) {
+            throw new VerificationApiError(`Database submission failed: ${insertError.message}`, 500);
+          }
         }
       }
-    } catch {
-      /* ignore Supabase error */
+    } catch (err: any) {
+      if (err instanceof VerificationApiError) throw err;
+      throw new VerificationApiError(err?.message || 'Failed to submit verification to database.', 500);
     }
   }
 };
@@ -945,7 +962,7 @@ export const AdminVerificationAPI = {
           const studentId = d.student_id_code || `STU-2026-${String(d.user_id || d.id).padStart(4, '0')}`;
           return {
             id: Number(d.id),
-            user_id: Number(d.user_id || d.id),
+            user_id: d.user_id || d.id,
             student_name: d.student_name,
             email: d.email || null,
             phone: d.phone || null,
@@ -1138,14 +1155,19 @@ export const AdminVerificationAPI = {
 
     // 2. Update Supabase verifications
     try {
-      await supabase.from('verifications').update({
+      const { error: sbUpdateErr } = await supabase.from('verifications').update({
         status: finalStatus,
         rejection_reason: rejectionReason || null,
         rejection_count: newRejectionCount,
         updated_at: now
       }).or(`id.eq.${verificationId},user_id.eq.${verificationId}${studentCodeIdentifier ? `,student_id_code.eq.${studentCodeIdentifier}` : ''}`);
-    } catch {
-      /* ignore Supabase error */
+
+      if (sbUpdateErr) {
+        throw new VerificationApiError(`Failed to update verification in database: ${sbUpdateErr.message}`, 500);
+      }
+    } catch (err: any) {
+      if (err instanceof VerificationApiError) throw err;
+      throw new VerificationApiError(err?.message || 'Failed to update verification status in database.', 500);
     }
 
     // 3. Automated Notification Generation & Logging

@@ -1300,7 +1300,7 @@ export default function App() {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-7 gap-4">
           {[
-            { step: '1', title: 'Create Account', desc: 'Sign up using Mobile OTP or Google.' },
+            { step: '1', title: 'Create Account', desc: 'Sign up with your student email.' },
             { step: '2', title: 'Verify Student ID', desc: 'Upload college ID card for review.' },
             { step: '3', title: 'Explore Listings', desc: 'Filter by tech stack & branch.' },
             { step: '4', title: '5 PPT Previews', desc: 'Use ♥ credits to read watermarked slides.' },

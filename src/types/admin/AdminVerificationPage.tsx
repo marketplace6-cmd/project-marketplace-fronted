@@ -359,7 +359,9 @@ export default function AdminVerificationPage({
         onSessionExpired();
         return;
       }
-      setDecisionError(requestError instanceof Error ? requestError.message : 'Unable to approve verification.');
+      const msg = requestError instanceof Error ? requestError.message : 'Unable to approve verification.';
+      setDecisionError(msg);
+      setError(msg);
     } finally {
       setSavingDecision(false);
     }
@@ -394,7 +396,9 @@ export default function AdminVerificationPage({
         onSessionExpired();
         return;
       }
-      setDecisionError(requestError instanceof Error ? requestError.message : 'Unable to record rejection.');
+      const msg = requestError instanceof Error ? requestError.message : 'Unable to record rejection.';
+      setDecisionError(msg);
+      setError(msg);
     } finally {
       setSavingDecision(false);
     }

@@ -100,4 +100,44 @@ CREATE TABLE IF NOT EXISTS public.otp_verifications (
 CREATE INDEX IF NOT EXISTS idx_otp_verifications_contact ON public.otp_verifications(contact);
 CREATE INDEX IF NOT EXISTS idx_otp_verifications_expires_at ON public.otp_verifications(expires_at);
 
+-- -----------------------------------------------------------------------------
+-- Verifications Table Compatibility & Row Level Security (RLS) Policies
+-- Ensures user_id supports UUID/Text, is nullable, and allows public/student submissions & admin operations
+-- -----------------------------------------------------------------------------
+ALTER TABLE IF EXISTS public.verifications
+  ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT,
+  ALTER COLUMN user_id DROP NOT NULL;
+
+ALTER TABLE public.verifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public insert on verifications" ON public.verifications;
+DROP POLICY IF EXISTS "Allow public select on verifications" ON public.verifications;
+DROP POLICY IF EXISTS "Allow public update on verifications" ON public.verifications;
+DROP POLICY IF EXISTS "Allow public delete on verifications" ON public.verifications;
+
+CREATE POLICY "Allow public insert on verifications" 
+  ON public.verifications FOR INSERT 
+  TO anon, authenticated 
+  WITH CHECK (true);
+
+CREATE POLICY "Allow public select on verifications" 
+  ON public.verifications FOR SELECT 
+  TO anon, authenticated 
+  USING (true);
+
+CREATE POLICY "Allow public update on verifications" 
+  ON public.verifications FOR UPDATE 
+  TO anon, authenticated 
+  USING (true) 
+  WITH CHECK (true);
+
+CREATE POLICY "Allow public delete on verifications" 
+  ON public.verifications FOR DELETE 
+  TO anon, authenticated 
+  USING (true);
+
+GRANT ALL ON TABLE public.verifications TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+
+
 

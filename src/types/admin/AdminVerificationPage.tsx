@@ -1,9 +1,10 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Download,
   FileImage,
   LoaderCircle,
@@ -21,7 +22,8 @@ import {
   AdminVerificationAPI,
   VerificationApiError,
   VerificationQueue,
-  VerificationQueueItem
+  VerificationQueueItem,
+  sortVerificationItems
 } from '../verificationService';
 import { SAMPLE_STUDENT_ID_FRONT, SAMPLE_STUDENT_ID_BACK } from '../mockIdCards';
 import { supabase } from '../../utils/supabase/client';
@@ -49,6 +51,7 @@ const REJECTION_PRESETS = [
 ];
 
 function statusStyle(status: VerificationQueueItem['status']) {
+  if (status === 'RE-UPLOADED') return 'bg-violet-100 text-violet-900 ring-violet-400 border-violet-400 font-black';
   if (status === 'APPROVED') return 'bg-emerald-50 text-emerald-700 ring-emerald-200 border-emerald-200';
   if (status === 'BLOCKED') return 'bg-purple-50 text-purple-700 ring-purple-200 border-purple-200';
   if (status === 'REJECTED') return 'bg-rose-50 text-rose-700 ring-rose-200 border-rose-200';
@@ -173,6 +176,11 @@ export default function AdminVerificationPage({
   const [decisionError, setDecisionError] = useState('');
   const [savingDecision, setSavingDecision] = useState(false);
   const [notice, setNotice] = useState('');
+
+  // Intelligent Queue Dynamic Ranking (RE-UPLOADED top -> PENDING -> REJECTED -> BLOCKED -> APPROVED)
+  const rankedItems = useMemo(() => sortVerificationItems(queue.items), [queue.items]);
+  const reuploadedCount = useMemo(() => queue.items.filter((i) => i.status === 'RE-UPLOADED').length, [queue.items]);
+  const newPendingCount = useMemo(() => queue.items.filter((i) => i.status === 'PENDING').length, [queue.items]);
 
   const fetchQueue = useCallback(
     () => AdminVerificationAPI.list(accessToken, { search: search.trim(), status: filter, page }),
@@ -471,9 +479,18 @@ export default function AdminVerificationPage({
       <div className="grid gap-4 sm:grid-cols-3">
         <article className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50/60 p-5 shadow-xs">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-amber-800">Pending Review</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-800">Action Required</p>
+              {reuploadedCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-600 text-white animate-pulse shadow-xs">
+                  {reuploadedCount} RE-UPLOADED
+                </span>
+              )}
+            </div>
             <p className="mt-1 text-2xl font-black tabular-nums text-amber-950">{queue.pending_count}</p>
-            <p className="text-[11px] text-amber-700 font-semibold mt-0.5">Awaiting administrative decision</p>
+            <p className="text-[11px] text-amber-700 font-semibold mt-0.5">
+              {reuploadedCount > 0 ? `${reuploadedCount} re-uploaded submissions · ${newPendingCount} new` : 'Awaiting administrative decision'}
+            </p>
           </div>
           <span className="rounded-xl bg-white p-3 text-amber-700 shadow-xs border border-amber-200/60">
             <FileImage size={22} />
@@ -497,7 +514,7 @@ export default function AdminVerificationPage({
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-indigo-800">Total Submissions</p>
             <p className="mt-1 text-2xl font-black tabular-nums text-indigo-950">{queue.total}</p>
-            <p className="text-[11px] text-indigo-700 font-semibold mt-0.5">Across all student batches</p>
+            <p className="text-[11px] text-indigo-700 font-semibold mt-0.5">Ranked by action priority</p>
           </div>
           <span className="rounded-xl bg-white p-3 text-indigo-700 shadow-xs border border-indigo-200/60">
             <ShieldCheck size={22} />
@@ -526,7 +543,7 @@ export default function AdminVerificationPage({
       )}
 
       {/* Filter and Search Bar */}
-      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs sm:grid-cols-[1fr_220px]">
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-xs sm:grid-cols-[1fr_240px]">
         <label className="relative">
           <span className="sr-only">Search submissions</span>
           <Search size={16} className="absolute left-3.5 top-3 text-slate-400" />
@@ -545,12 +562,14 @@ export default function AdminVerificationPage({
             setPage(1);
             setFilter(event.target.value);
           }}
-          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500"
+          className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-indigo-500 cursor-pointer"
         >
-          <option value="">All Verification Statuses</option>
-          <option value="PENDING">Pending Review Only</option>
-          <option value="APPROVED">Approved Only</option>
-          <option value="REJECTED">Rejected Only</option>
+          <option value="">All Statuses (Smart Priority Ranked)</option>
+          <option value="RE-UPLOADED">⚡ Re-Uploaded Only (Priority 1)</option>
+          <option value="PENDING">Pending Review (Priority 2)</option>
+          <option value="APPROVED">Verified & Approved Only</option>
+          <option value="REJECTED">Rejected Submissions</option>
+          <option value="BLOCKED">Blocked Accounts</option>
         </select>
       </div>
 
@@ -585,15 +604,30 @@ export default function AdminVerificationPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {queue.items.map((item) => {
+                {rankedItems.map((item) => {
+                  const isReuploaded = item.status === 'RE-UPLOADED';
                   const studentIdDisplay = item.student_id_code || (item.user_id === 1346 ? 'STU-2026-0001' : `STU-2026-${String(item.user_id).padStart(4, '0')}`);
                   const referralCodeDisplay = item.referral_code || 'A7K2';
 
                   return (
-                    <tr key={item.id} className="text-slate-700 hover:bg-slate-50/60 transition-colors">
+                    <tr
+                      key={item.id}
+                      className={`text-slate-700 transition-colors ${
+                        isReuploaded
+                          ? 'bg-violet-50/50 hover:bg-violet-100/60 border-l-4 border-l-violet-600'
+                          : 'hover:bg-slate-50/70'
+                      }`}
+                    >
                       {/* 1. Student Name & Course */}
                       <td className="px-4 py-3.5">
-                        <div className="font-extrabold text-slate-900 text-sm">{item.student_name}</div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="font-extrabold text-slate-900 text-sm">{item.student_name}</div>
+                          {isReuploaded && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-violet-600 text-white tracking-wide shadow-2xs">
+                              TOP 1
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-slate-500 truncate max-w-[180px]">{item.course || 'Degree / Department'}</div>
                       </td>
 
@@ -635,10 +669,18 @@ export default function AdminVerificationPage({
                       {/* 8. Status */}
                       <td className="px-4 py-3.5">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider ring-1 ${statusStyle(item.status)}`}>
-                          {item.status === 'APPROVED' && <CheckCircle2 size={12} />}
-                          {item.status === 'BLOCKED' && <XCircle size={12} className="text-purple-600" />}
-                          {item.status === 'REJECTED' && <XCircle size={12} />}
-                          {item.status === 'BLOCKED' ? 'BLOCKED (2/2)' : item.status === 'REJECTED' ? `REJECTED (${item.rejection_count || 1}/2)` : item.status}
+                          {item.status === 'RE-UPLOADED' && <RotateCcw size={12} className="text-violet-700 shrink-0" />}
+                          {item.status === 'APPROVED' && <CheckCircle2 size={12} className="shrink-0" />}
+                          {item.status === 'BLOCKED' && <XCircle size={12} className="text-purple-600 shrink-0" />}
+                          {item.status === 'REJECTED' && <XCircle size={12} className="shrink-0" />}
+                          {item.status === 'PENDING' && <Clock size={12} className="shrink-0 text-amber-600" />}
+                          {item.status === 'RE-UPLOADED'
+                            ? `⚡ RE-UPLOADED (${(item.rejection_count || 1) + 1}/2)`
+                            : item.status === 'BLOCKED'
+                            ? 'BLOCKED (2/2)'
+                            : item.status === 'REJECTED'
+                            ? `REJECTED (${item.rejection_count || 1}/2)`
+                            : item.status}
                         </span>
                       </td>
 
@@ -719,7 +761,13 @@ export default function AdminVerificationPage({
                       AK Code: {selected.referral_code || 'A7K2'}
                     </span>
                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase ring-1 ${statusStyle(selected.status)}`}>
-                      {selected.status === 'BLOCKED' ? 'BLOCKED (2/2)' : selected.status === 'REJECTED' ? `REJECTED (${selected.rejection_count || 1}/2)` : selected.status}
+                      {selected.status === 'RE-UPLOADED'
+                        ? `⚡ RE-UPLOADED (${(selected.rejection_count || 1) + 1}/2)`
+                        : selected.status === 'BLOCKED'
+                        ? 'BLOCKED (2/2)'
+                        : selected.status === 'REJECTED'
+                        ? `REJECTED (${selected.rejection_count || 1}/2)`
+                        : selected.status}
                     </span>
                     {(selected.rejection_count || 0) > 0 && (
                       <span className="font-mono font-bold text-[10px] text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
@@ -813,6 +861,20 @@ export default function AdminVerificationPage({
                       {(selected.document_name && !selected.document_name.includes('document_upload.png') && !selected.document_name.startsWith('data:')) ? selected.document_name : '16.jpg (Front) & 17.jpg (Back)'}
                     </p>
                   </div>
+
+                  {(selected.status === 'RE-UPLOADED' || (selected.rejection_count || 0) > 0) && (
+                    <div className="bg-violet-50 p-2.5 rounded-xl border border-violet-200 space-y-1">
+                      <p className="font-extrabold text-violet-900 uppercase text-[10px] flex items-center gap-1">
+                        <RotateCcw size={11} className="text-violet-700 shrink-0" />
+                        Re-upload Status & Storage Cleanup
+                      </p>
+                      <p className="text-[11px] text-violet-900 leading-relaxed font-semibold">
+                        {selected.status === 'RE-UPLOADED'
+                          ? 'Student corrected their ID cards after rejection. Old front/back storage files were automatically purged to keep storage clean.'
+                          : `Previous rejections: ${selected.rejection_count} / 2. Documents replaced and old files cleaned.`}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-3 border-t border-slate-200">

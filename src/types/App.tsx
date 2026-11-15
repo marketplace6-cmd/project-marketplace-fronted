@@ -137,7 +137,7 @@ export default function App() {
               rejectionCount: rejCount || 1,
               rejectionReason: row.rejection_reason || undefined
             }));
-          } else if (row.status === 'PENDING') {
+          } else if (row.status === 'PENDING' || row.status === 'RE-UPLOADED') {
             setStudent((prev) => (prev.authState === 'verification_pending' ? prev : {
               ...prev,
               authState: 'verification_pending',
@@ -356,6 +356,8 @@ export default function App() {
       formData.append('referral_code', currentAkReferralCode);
       formData.append('user_id', currentStudentId);
 
+      const isReupload = student.authState === 'verification_rejected' || (student.rejectionCount || 0) > 0;
+
       await StudentVerificationAPI.submitDual(formData, {
         student_name: currentStudentName,
         email: student.email || 'student@umu.ac.in',
@@ -368,11 +370,17 @@ export default function App() {
         back_data_url: backDataUrl,
         front_filename: idCardFrontFile.name,
         back_filename: idCardBackFile ? idCardBackFile.name : undefined,
-        user_id: currentStudentId
+        user_id: currentStudentId,
+        is_reupload: isReupload
       });
 
       setStudent((prev) => ({ ...prev, authState: 'verification_pending', rejectionReason: undefined }));
-      showToast('ID documents (Front & Back) successfully submitted! Admin review pending.', 'success');
+      showToast(
+        isReupload
+          ? 'Corrected ID documents re-submitted! Prioritized at top of admin queue.'
+          : 'ID documents (Front & Back) successfully submitted! Admin review pending.',
+        'success'
+      );
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to submit ID documents. Please try again.', 'error');
     } finally {
@@ -2356,9 +2364,15 @@ export default function App() {
                         Rejected ({2 - (student.rejectionCount || 1)} Left)
                       </span>
                     ) : student.authState === 'verification_pending' ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                        <RefreshCw className="w-3.5 h-3.5 text-amber-600 animate-spin" />
-                        Pending Review
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                        (student.rejectionCount || 0) > 0
+                          ? 'bg-violet-100 text-violet-900 border border-violet-300'
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}>
+                        <RefreshCw className={`w-3.5 h-3.5 ${
+                          (student.rejectionCount || 0) > 0 ? 'text-violet-700 animate-spin' : 'text-amber-600 animate-spin'
+                        }`} />
+                        {(student.rejectionCount || 0) > 0 ? 'Re-uploaded (Priority Review)' : 'Pending Review'}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
@@ -2498,8 +2512,13 @@ export default function App() {
                       </h3>
                     </div>
                     {student.authState === 'verification_pending' && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-200 text-amber-900">
-                        <CheckCircle2 size={13} className="text-amber-700" /> Under Admin Review
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                        (student.rejectionCount || 0) > 0
+                          ? 'bg-violet-200 text-violet-900 border border-violet-300'
+                          : 'bg-amber-200 text-amber-900'
+                      }`}>
+                        <CheckCircle2 size={13} className={(student.rejectionCount || 0) > 0 ? 'text-violet-700' : 'text-amber-700'} />
+                        {(student.rejectionCount || 0) > 0 ? '⚡ Re-uploaded (Priority Queue #1)' : 'Under Admin Review'}
                       </span>
                     )}
                   </div>
@@ -2590,7 +2609,9 @@ export default function App() {
                   </button>
                   {student.authState === 'verification_pending' && (
                     <p className="mt-2.5 text-center text-xs text-amber-900 font-medium">
-                      ✓ Your documents have been submitted to the Uvikart administrator queue. Status will update automatically once verified.
+                      {(student.rejectionCount || 0) > 0
+                        ? '⚡ Your corrected documents have been re-submitted with Priority #1 ranking in the Uvikart administrator queue. Obsolete previous files have been purged.'
+                        : '✓ Your documents have been submitted to the Uvikart administrator queue. Status will update automatically once verified.'}
                     </p>
                   )}
                 </div>

@@ -9,7 +9,7 @@ export interface VerificationQueueItem {
   phone: string | null;
   college: string | null;
   course: string | null;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'BLOCKED';
+  status: 'PENDING' | 'RE-UPLOADED' | 'APPROVED' | 'REJECTED' | 'BLOCKED';
   submitted_at: string;
   document_name?: string;
   document_type?: string;
@@ -33,7 +33,7 @@ export interface VerificationQueue {
 
 export interface StudentVerificationStatus {
   id: number;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'VERIFIED' | 'BLOCKED';
+  status: 'PENDING' | 'RE-UPLOADED' | 'APPROVED' | 'REJECTED' | 'VERIFIED' | 'BLOCKED';
   payment_phone: string;
   rejection_reason: string | null;
   rejection_count?: number;
@@ -101,7 +101,7 @@ function isOptionalString(value: unknown): value is string | null {
 function isStudentStatus(value: unknown): value is StudentVerificationStatus {
   return isRecord(value)
     && typeof value.id === 'number'
-    && ['PENDING', 'APPROVED', 'REJECTED', 'VERIFIED', 'BLOCKED'].includes(String(value.status))
+    && ['PENDING', 'RE-UPLOADED', 'APPROVED', 'REJECTED', 'VERIFIED', 'BLOCKED'].includes(String(value.status))
     && typeof value.payment_phone === 'string'
     && isOptionalString(value.rejection_reason)
     && typeof value.created_at === 'string'
@@ -131,7 +131,7 @@ function isQueueItem(value: unknown): value is VerificationQueueItem {
     && isOptionalString(value.phone)
     && isOptionalString(value.college)
     && isOptionalString(value.course)
-    && ['PENDING', 'APPROVED', 'REJECTED', 'BLOCKED'].includes(String(value.status))
+    && ['PENDING', 'RE-UPLOADED', 'APPROVED', 'REJECTED', 'BLOCKED'].includes(String(value.status))
     && typeof value.submitted_at === 'string';
 }
 
@@ -198,6 +198,61 @@ async function request(
 }
 
 const LOCAL_STUDENT_VERIFICATION_KEY = 'cpm_student_verification';
+
+/**
+ * Storage Cleanup: deletes obsolete document files from Supabase Storage
+ */
+export async function deleteSupabaseStorageFile(urlOrPath?: string | null): Promise<void> {
+  if (!urlOrPath || typeof urlOrPath !== 'string') return;
+  if (urlOrPath.startsWith('data:') || urlOrPath.includes('SAMPLE_STUDENT_ID') || urlOrPath.endsWith('.svg')) return;
+  try {
+    // Supabase storage URL format: /storage/v1/object/public/{bucket}/{filePath}
+    const match = urlOrPath.match(/\/storage\/v1\/object\/(?:public\/)?([^/]+)\/(.+)/);
+    if (match) {
+      const bucket = match[1];
+      const path = decodeURIComponent(match[2].split('?')[0]);
+      await supabase.storage.from(bucket).remove([path]);
+      return;
+    }
+    // Relative bucket/path format
+    if (urlOrPath.includes('/') && !urlOrPath.startsWith('http')) {
+      const slashIdx = urlOrPath.indexOf('/');
+      const bucket = urlOrPath.substring(0, slashIdx);
+      const path = urlOrPath.substring(slashIdx + 1);
+      await supabase.storage.from(bucket).remove([path]);
+    }
+  } catch (err) {
+    console.warn('Storage cleanup notice:', err);
+  }
+}
+
+/**
+ * Dynamic Verification Queue Priority Ranker:
+ * Priority 1: RE-UPLOADED (Action Required: newly re-submitted by student)
+ * Priority 2: PENDING (Action Required: newly registered submission)
+ * Priority 3: REJECTED
+ * Priority 4: BLOCKED
+ * Priority 5: APPROVED / VERIFIED
+ */
+export function getVerificationPriority(status: string): number {
+  if (status === 'RE-UPLOADED') return 1;
+  if (status === 'PENDING') return 2;
+  if (status === 'REJECTED') return 3;
+  if (status === 'BLOCKED') return 4;
+  if (status === 'APPROVED' || status === 'VERIFIED') return 5;
+  return 6;
+}
+
+export function sortVerificationItems(items: VerificationQueueItem[]): VerificationQueueItem[] {
+  return [...items].sort((a, b) => {
+    const pA = getVerificationPriority(a.status);
+    const pB = getVerificationPriority(b.status);
+    if (pA !== pB) return pA - pB;
+    const timeA = new Date(a.submitted_at || 0).getTime();
+    const timeB = new Date(b.submitted_at || 0).getTime();
+    return timeB - timeA;
+  });
+}
 
 function getLocalStudentVerification(): StudentVerificationStatus | null {
   try {
@@ -440,9 +495,69 @@ export const StudentVerificationAPI = {
       front_filename: string;
       back_filename?: string;
       user_id?: string | number;
+      is_reupload?: boolean;
     }
   ): Promise<void> {
-    // 1. Post to backend endpoints
+    const now = new Date().toISOString();
+    const userId = Number(details.user_id) || (details.student_id_code === 'STU-2026-0001' ? 1346 : Math.floor(1000 + Math.random() * 9000));
+
+    // 1. Check existing verification to detect Re-upload & identify old storage files to delete
+    const localItems = loadLocalVerifications();
+    const existingIdx = localItems.findIndex(
+      (i) => i.email === details.email || i.student_id_code === details.student_id_code || i.user_id === userId
+    );
+    const existingItem = existingIdx !== -1 ? localItems[existingIdx] : null;
+
+    let oldFrontUrl = existingItem?.front_image_url || existingItem?.front_data_url;
+    let oldBackUrl = existingItem?.back_image_url || existingItem?.back_data_url;
+
+    try {
+      const { data: existingSb } = await supabase
+        .from('verifications')
+        .select('status, rejection_count, front_image_url, back_image_url, front_data_url, back_data_url')
+        .or(`email.eq.${details.email},student_id_code.eq.${details.student_id_code},user_id.eq.${userId}`)
+        .maybeSingle();
+
+      if (existingSb) {
+        oldFrontUrl = existingSb.front_image_url || existingSb.front_data_url || oldFrontUrl;
+        oldBackUrl = existingSb.back_image_url || existingSb.back_data_url || oldBackUrl;
+      }
+    } catch {
+      /* continue */
+    }
+
+    const isReupload = Boolean(details.is_reupload) || Boolean(existingItem && ((existingItem.rejection_count || 0) > 0 || existingItem.status === 'REJECTED' || existingItem.status === 'RE-UPLOADED'));
+    const newStatus: VerificationQueueItem['status'] = isReupload ? 'RE-UPLOADED' : 'PENDING';
+    const currentRejectionCount = existingItem?.rejection_count || (isReupload ? 1 : 0);
+
+    // 2. Storage Cleanup on Re-upload: automatically delete old front & back image files from storage
+    if (isReupload) {
+      await Promise.allSettled([
+        deleteSupabaseStorageFile(oldFrontUrl),
+        deleteSupabaseStorageFile(oldBackUrl)
+      ]);
+
+      // Inform backend storage cleanup endpoint
+      try {
+        await fetch(`${verificationApiBaseUrl}/verification/storage/cleanup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_id: details.student_id_code,
+            user_id: userId,
+            email: details.email,
+            old_front_url: oldFrontUrl,
+            old_back_url: oldBackUrl
+          })
+        });
+      } catch {
+        /* backend optional */
+      }
+    }
+
+    // 3. Post to backend endpoints
+    formData.append('is_reupload', String(isReupload));
+    formData.append('status', newStatus);
     const endpoints = [
       `${verificationApiBaseUrl}/students/verify`,
       `${verificationApiBaseUrl.replace(/\/v1$/, '')}/students/verify`,
@@ -462,10 +577,7 @@ export const StudentVerificationAPI = {
       }
     }
 
-    // 2. Persist in localStorage queue and Supabase so Admin instantly receives it
-    const now = new Date().toISOString();
-    const userId = Number(details.user_id) || (details.student_id_code === 'STU-2026-0001' ? 1346 : Math.floor(1000 + Math.random() * 9000));
-
+    // 4. Persist in localStorage queue with Priority Ranking (Re-uploaded at top)
     const newItem: VerificationQueueItem = {
       id: userId,
       user_id: userId,
@@ -474,7 +586,7 @@ export const StudentVerificationAPI = {
       phone: details.phone,
       college: details.college,
       course: details.course,
-      status: 'PENDING',
+      status: newStatus,
       submitted_at: now,
       document_name: details.front_filename,
       document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
@@ -483,30 +595,29 @@ export const StudentVerificationAPI = {
       front_data_url: details.front_data_url,
       back_data_url: details.back_data_url || undefined,
       front_image_url: details.front_data_url,
-      back_image_url: details.back_data_url || undefined
+      back_image_url: details.back_data_url || undefined,
+      rejection_count: currentRejectionCount,
+      rejection_reason: null
     };
 
-    const localItems = loadLocalVerifications();
-    const existingIdx = localItems.findIndex(
-      (i) => i.email === details.email || i.student_id_code === details.student_id_code || i.user_id === userId
-    );
     if (existingIdx !== -1) {
       localItems[existingIdx] = {
         ...localItems[existingIdx],
-        ...newItem,
-        status: 'PENDING',
-        rejection_reason: null
+        ...newItem
       };
     } else {
       localItems.unshift(newItem);
     }
-    saveLocalVerifications(localItems);
+    // Re-rank queue so RE-UPLOADED floats to the very top
+    const rankedQueue = sortVerificationItems(localItems);
+    saveLocalVerifications(rankedQueue);
 
     const studentStatus: StudentVerificationStatus = {
       id: userId,
-      status: 'PENDING',
+      status: newStatus,
       payment_phone: details.phone,
       rejection_reason: null,
+      rejection_count: currentRejectionCount,
       created_at: now,
       updated_at: now,
       document_name: details.front_filename,
@@ -528,6 +639,7 @@ export const StudentVerificationAPI = {
         const sess = JSON.parse(sessRaw);
         sess.authState = 'verification_pending';
         sess.rejectionReason = undefined;
+        sess.rejectionCount = currentRejectionCount;
         localStorage.setItem('cpm_student_session', JSON.stringify(sess));
       }
     } catch {
@@ -538,12 +650,15 @@ export const StudentVerificationAPI = {
       window.dispatchEvent(new CustomEvent('uvikart:verification_updated', {
         detail: {
           verificationId: userId,
-          status: 'PENDING',
-          student_id_code: details.student_id_code
+          status: newStatus,
+          student_id_code: details.student_id_code,
+          is_reupload: isReupload,
+          rejectionCount: currentRejectionCount
         }
       }));
     }
 
+    // 5. Update Supabase verifications row cleanly with new images & RE-UPLOADED status
     try {
       const record = {
         user_id: userId,
@@ -554,8 +669,9 @@ export const StudentVerificationAPI = {
         course: details.course,
         student_id_code: details.student_id_code,
         referral_code: details.referral_code,
-        status: 'PENDING',
+        status: newStatus,
         rejection_reason: null,
+        rejection_count: currentRejectionCount,
         payment_phone: details.phone,
         document_name: details.front_filename,
         document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
@@ -705,7 +821,7 @@ export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
     phone: '7004273758',
     college: 'Ranchi',
     course: 'B.Tech Computer Science',
-    status: 'PENDING',
+    status: 'RE-UPLOADED',
     submitted_at: '2026-11-15T01:58:00.000Z',
     document_name: '16.jpg',
     document_type: 'Student ID Card (Front & Back)',
@@ -713,7 +829,9 @@ export const DEFAULT_VERIFICATION_QUEUE_ITEMS: VerificationQueueItem[] = [
     front_data_url: SAMPLE_STUDENT_ID_FRONT,
     back_data_url: SAMPLE_STUDENT_ID_BACK,
     front_image_url: SAMPLE_STUDENT_ID_FRONT,
-    back_image_url: SAMPLE_STUDENT_ID_BACK
+    back_image_url: SAMPLE_STUDENT_ID_BACK,
+    rejection_count: 1,
+    rejection_reason: null
   },
   {
     id: 4279,
@@ -846,7 +964,7 @@ function loadLocalVerifications(): VerificationQueueItem[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((item: VerificationQueueItem) => {
+        const items = parsed.map((item: VerificationQueueItem) => {
           const hasRealFront = (item.front_data_url && typeof item.front_data_url === 'string' && item.front_data_url.startsWith('data:image/')) ||
                                (item.front_image_url && typeof item.front_image_url === 'string' && !item.front_image_url.endsWith('.svg'));
           const front = hasRealFront ? (item.front_data_url || item.front_image_url) : SAMPLE_STUDENT_ID_FRONT;
@@ -869,17 +987,18 @@ function loadLocalVerifications(): VerificationQueueItem[] {
             referral_code: item.referral_code || 'A7K2'
           };
         });
+        return sortVerificationItems(items);
       }
     }
-    return DEFAULT_VERIFICATION_QUEUE_ITEMS;
+    return sortVerificationItems(DEFAULT_VERIFICATION_QUEUE_ITEMS);
   } catch {
-    return DEFAULT_VERIFICATION_QUEUE_ITEMS;
+    return sortVerificationItems(DEFAULT_VERIFICATION_QUEUE_ITEMS);
   }
 }
 
 function saveLocalVerifications(items: VerificationQueueItem[]): void {
   try {
-    localStorage.setItem(LOCAL_VERIFICATIONS_KEY, JSON.stringify(items));
+    localStorage.setItem(LOCAL_VERIFICATIONS_KEY, JSON.stringify(sortVerificationItems(items)));
   } catch {
     /* ignore */
   }
@@ -898,7 +1017,10 @@ export const AdminVerificationAPI = {
       if (!isQueue(data)) {
         throw new VerificationApiError('Verification queue response is invalid.', 502);
       }
-      return data;
+      return {
+        ...data,
+        items: sortVerificationItems(data.items)
+      };
     } catch {
       // 1. Try Supabase
       try {
@@ -942,10 +1064,11 @@ export const AdminVerificationAPI = {
               rejection_reason: d.rejection_reason || null
             };
           });
-          const pendingCount = items.filter((i) => i.status === 'PENDING').length;
+          const sortedItems = sortVerificationItems(items);
+          const pendingCount = items.filter((i) => i.status === 'PENDING' || i.status === 'RE-UPLOADED').length;
           return {
-            items,
-            total: count || items.length,
+            items: sortedItems,
+            total: count || sortedItems.length,
             pending_count: pendingCount,
             page: filters.page,
             page_size: 25
@@ -972,10 +1095,11 @@ export const AdminVerificationAPI = {
         if (filters.status && item.status !== filters.status) return false;
         return true;
       });
-      const pendingCount = all.filter((i) => i.status === 'PENDING').length;
+      const sorted = sortVerificationItems(filtered);
+      const pendingCount = all.filter((i) => i.status === 'PENDING' || i.status === 'RE-UPLOADED').length;
       return {
-        items: filtered,
-        total: filtered.length,
+        items: sorted,
+        total: sorted.length,
         pending_count: pendingCount,
         page: filters.page,
         page_size: 25

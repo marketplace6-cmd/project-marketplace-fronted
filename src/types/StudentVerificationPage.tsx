@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Clock3, RefreshCw, ShieldCheck, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3, RefreshCw, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
 import {
   StudentVerificationAPI,
   StudentNotification,
@@ -28,6 +28,9 @@ interface StudentVerificationPageProps {
 function badge(status: StudentVerificationStatus['status']) {
   if (status === 'APPROVED' || status === 'VERIFIED') {
     return { label: 'Approved', className: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 };
+  }
+  if (status === 'RE-UPLOADED') {
+    return { label: 'Re-uploaded (Priority Review)', className: 'bg-violet-100 text-violet-900 border border-violet-300 font-extrabold', icon: RotateCcw };
   }
   if (status === 'BLOCKED') {
     return { label: 'Account Restricted', className: 'bg-rose-100 text-rose-800', icon: AlertCircle };
@@ -232,6 +235,8 @@ export default function StudentVerificationPage({
       formData.append('student_id_code', student?.id || 'STU-2026-0001');
       formData.append('referral_code', 'A7K2');
 
+      const isReupload = verification?.status === 'REJECTED' || (verification?.rejection_count || 0) > 0;
+
       await StudentVerificationAPI.submitDual(formData, {
         student_name: studentName.trim() || student?.fullName || 'Student',
         email: studentEmail.trim() || student?.email || 'student@umu.ac.in',
@@ -244,15 +249,19 @@ export default function StudentVerificationPage({
         back_data_url: backDataUrl,
         front_filename: file.name,
         back_filename: backFile ? backFile.name : undefined,
-        user_id: student?.id || 'STU-2026-0001'
+        user_id: student?.id || 'STU-2026-0001',
+        is_reupload: isReupload
       });
 
-      setMessage(verification ? 'Resubmission received. Your updated documents are pending review.' : 'Your ID documents were submitted and are pending review.');
+      setMessage(
+        isReupload
+          ? 'Corrected ID documents re-submitted! Prioritized at top of admin queue.'
+          : 'Your ID documents were submitted and are pending review.'
+      );
       setFile(null);
       setFilePreview('');
       setBackFile(null);
       setBackFilePreview('');
-      setCaptchaAnswer('');
       setPuzzleAnswer('');
       setLoading(true);
       await refresh();
@@ -346,12 +355,27 @@ export default function StudentVerificationPage({
                 </button>
               </div>
             </div>
-          ) : verification && verification.status === 'PENDING' ? (
+          ) : verification && (verification.status === 'PENDING' || verification.status === 'RE-UPLOADED') ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
               {message && <p role="status" className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{message}</p>}
-              <p className="text-sm font-semibold text-slate-900">Your submission is awaiting administrator review.</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-slate-900">
+                  {verification.status === 'RE-UPLOADED'
+                    ? '⚡ Your corrected submission is prioritized at the top of the queue.'
+                    : 'Your submission is awaiting administrator review.'}
+                </p>
+                {verification.status === 'RE-UPLOADED' && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-600 text-white">
+                    TOP PRIORITY
+                  </span>
+                )}
+              </div>
               <p className="mt-1 text-xs text-slate-600">Submitted {new Date(verification.created_at).toLocaleString()}</p>
-              <p className="mt-3 text-xs text-slate-600">You will be notified after a decision. Preview access will unlock once verified.</p>
+              <p className="mt-3 text-xs text-slate-600">
+                {verification.status === 'RE-UPLOADED'
+                  ? 'Your re-uploaded ID documents are highlighted for urgent administrator inspection. Previous documents have been cleanly purged.'
+                  : 'You will be notified after a decision. Preview access will unlock once verified.'}
+              </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="button" onClick={() => { setLoading(true); void refresh(); }} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"><RefreshCw size={14} /> Refresh status</button>
                 <button type="button" onClick={onContinue} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Continue to marketplace</button>
@@ -448,7 +472,6 @@ export default function StudentVerificationPage({
                         value={puzzleAnswer}
                         onChange={(event) => {
                           setPuzzleAnswer(event.target.value);
-                          setCaptchaAnswer(event.target.value);
                         }}
                         className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                       />

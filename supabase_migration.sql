@@ -14,6 +14,7 @@ COMMENT ON COLUMN public.verifications.front_image_url IS 'Base64 data URI or pu
 COMMENT ON COLUMN public.verifications.back_image_url IS 'Base64 data URI or public storage URL for the back ID card image';
 COMMENT ON COLUMN public.verifications.front_data_url IS 'Base64 data URI fallback for front ID card';
 COMMENT ON COLUMN public.verifications.back_data_url IS 'Base64 data URI fallback for back ID card';
+COMMENT ON COLUMN public.verifications.status IS 'Verification status: PENDING (new), RE-UPLOADED (priority re-upload after rejection), APPROVED, VERIFIED, REJECTED, BLOCKED';
 COMMENT ON COLUMN public.verifications.rejection_count IS 'Counter tracking number of rejected verification submissions (max 2)';
 COMMENT ON COLUMN public.verifications.rejection_reason IS 'Administrative rejection feedback for student correction';
 

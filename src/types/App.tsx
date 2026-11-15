@@ -24,7 +24,8 @@ import StudentCommercePanel from './StudentCommercePanel';
 import AdminDashboard from './admin/AdminDashboard';
 import StudentReferralPage from './StudentReferralPage';
 import { ReferralApiError, StudentReferralAPI } from './referralService';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../supabaseClient';
+import StudentLogin, { formatPhoneNumberE164 } from './StudentLogin';
 
 type PageRoute =
   | 'home'
@@ -100,6 +101,13 @@ export default function App() {
         let orList: string[] = [];
         if (studentId) orList.push(`student_id_code.eq.${studentId}`);
         if (email) orList.push(`email.eq.${email}`);
+        if (student.mobile) {
+          const digits = student.mobile.replace(/\D/g, '');
+          const last10 = digits.slice(-10);
+          if (last10) {
+            orList.push(`phone.ilike.%${last10}%`);
+          }
+        }
         if (numId) {
           orList.push(`user_id.eq.${numId}`);
           orList.push(`id.eq.${numId}`);
@@ -569,16 +577,43 @@ export default function App() {
         const validReferral = await StudentReferralAPI.validateCode(referralCodeFromUrl);
         if (!validReferral) throw new ReferralApiError('This referral link is invalid or inactive.', 404);
       }
-      const response = mode === 'login'
-        ? await StudentAuthAPI.requestLoginOtp(contact)
-        : await StudentAuthAPI.requestSignupOtp({
-            full_name: studentSignupName.trim(),
-            department: studentSignupCourse.trim(),
-            university_name: studentSignupCollege.trim(),
-            contact_type: contact.includes('@') ? 'email' : 'phone',
-            contact_value: contact,
-            referral_code: referralCodeFromUrl || undefined
-          });
+      if (mode === 'login') {
+        const formattedPhone = formatPhoneNumberE164(contact);
+        if (!formattedPhone || formattedPhone.length < 10) {
+          const err = 'Please enter a valid phone number (e.g. +91 98765 43210).';
+          setStudentAuthMessage(err);
+          showToast(err, 'error');
+          setStudentAuthLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase.auth.signInWithOtp({
+          phone: formattedPhone
+        });
+
+        if (error) {
+          console.warn('Supabase signInWithOtp error:', error.message);
+          showToast(error.message, 'error');
+          setStudentAuthMessage(error.message);
+          setStudentAuthLoading(false);
+          return;
+        }
+
+        setStudentOtpRequested(true);
+        showToast(`One-time sign-in code sent to ${formattedPhone}! Please enter the OTP to continue.`, 'success');
+        setStudentAuthMessage(`Sign-in code dispatched to ${formattedPhone}. Enter the one-time code to complete verification.`);
+        setStudentAuthLoading(false);
+        return;
+      }
+
+      const response = await StudentAuthAPI.requestSignupOtp({
+        full_name: studentSignupName.trim(),
+        department: studentSignupCourse.trim(),
+        university_name: studentSignupCollege.trim(),
+        contact_type: contact.includes('@') ? 'email' : 'phone',
+        contact_value: contact,
+        referral_code: referralCodeFromUrl || undefined
+      });
       setStudentOtpRequested(true);
       setStudentAuthMessage(response.code
         ? `Development OTP (no SMS/email provider is configured): ${response.code}`
@@ -603,17 +638,84 @@ export default function App() {
     setStudentAuthMessage('');
     try {
       const contact = studentContact.trim();
-      const response: StudentTokenResponse = mode === 'login'
-        ? await StudentAuthAPI.verifyLoginOtp(contact, studentOtp.trim())
-        : await StudentAuthAPI.verifySignupOtp({
-            full_name: studentSignupName.trim(),
-            department: studentSignupCourse.trim(),
-            university_name: studentSignupCollege.trim(),
-            contact_type: contact.includes('@') ? 'email' : 'phone',
-            contact_value: contact,
-            code: studentOtp.trim(),
-            referral_code: referralCodeFromUrl || undefined
-          });
+
+      if (mode === 'login') {
+        const formattedPhone = formatPhoneNumberE164(contact);
+        const { data, error } = await supabase.auth.verifyOtp({
+          phone: formattedPhone,
+          token: studentOtp.trim(),
+          type: 'sms'
+        });
+
+        if (error) {
+          console.warn('Supabase verifyOtp error:', error.message);
+          showToast(error.message, 'error');
+          setStudentAuthMessage(error.message);
+          setStudentAuthLoading(false);
+          return;
+        }
+
+        const session = data?.session;
+        const user = data?.user || session?.user;
+
+        // Query verifications table for this student
+        let verifRecord: any = null;
+        try {
+          const cleanDigits = formattedPhone.replace(/\D/g, '');
+          const last10 = cleanDigits.slice(-10);
+          const { data: rows } = await supabase
+            .from('verifications')
+            .select('*')
+            .or(`phone.ilike.%${last10}%,email.eq.${user?.email || ''}`)
+            .order('updated_at', { ascending: false })
+            .limit(1);
+
+          if (rows && rows.length > 0) verifRecord = rows[0];
+        } catch (dbErr) {
+          console.warn('Lookup error in verifyStudentOtp:', dbErr);
+        }
+
+        const isVerified = verifRecord?.status === 'APPROVED' || verifRecord?.status === 'VERIFIED';
+        setStudent({
+          ...INITIAL_STUDENT,
+          id: verifRecord?.student_id_code || (user?.id ? `STU-2026-${user.id.slice(0, 4).toUpperCase()}` : 'STU-2026-7611'),
+          accessToken: session?.access_token || 'supabase-token',
+          fullName: verifRecord?.student_name || user?.user_metadata?.full_name || student.fullName || 'Mayank Kumar',
+          email: verifRecord?.email || user?.email || '',
+          mobile: formattedPhone,
+          collegeName: verifRecord?.college || student.collegeName || 'Usha Martin University',
+          department: verifRecord?.course || 'B.Tech Computer Science',
+          authState: isVerified
+            ? 'verified'
+            : verifRecord?.status === 'RE-UPLOADED'
+            ? 'verification_pending'
+            : verifRecord?.status === 'PENDING'
+            ? 'verification_pending'
+            : verifRecord?.status === 'REJECTED'
+            ? 'verification_rejected'
+            : verifRecord?.status === 'BLOCKED'
+            ? 'verification_blocked'
+            : 'verified',
+          role: 'student'
+        });
+
+        setStudentOtpRequested(false);
+        setStudentOtp('');
+        setStudentAuthMessage('');
+        showToast('Phone number verified successfully! Redirecting to student dashboard...', 'success');
+        navigate('dashboard');
+        return;
+      }
+
+      const response: StudentTokenResponse = await StudentAuthAPI.verifySignupOtp({
+        full_name: studentSignupName.trim(),
+        department: studentSignupCourse.trim(),
+        university_name: studentSignupCollege.trim(),
+        contact_type: contact.includes('@') ? 'email' : 'phone',
+        contact_value: contact,
+        code: studentOtp.trim(),
+        referral_code: referralCodeFromUrl || undefined
+      });
       setStudent({
         ...INITIAL_STUDENT,
         id: String(response.user_id),
@@ -1641,6 +1743,26 @@ export default function App() {
           onContinue={() => navigate('dashboard')}
           onSessionExpired={handleStudentSessionExpired}
           onApproved={handleStudentApproved}
+        />
+      );
+    }
+
+    if (mode === 'login') {
+      return (
+        <StudentLogin
+          showToast={showToast}
+          onNavigateSignup={() => navigate('signup')}
+          onNavigateDashboard={() => navigate('dashboard')}
+          onSuccess={({ user, session, studentProfile }) => {
+            if (studentProfile) {
+              setStudent((prev) => ({
+                ...prev,
+                ...studentProfile,
+                role: 'student'
+              }));
+            }
+            navigate('dashboard');
+          }}
         />
       );
     }

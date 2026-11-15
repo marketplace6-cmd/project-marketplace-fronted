@@ -86,7 +86,7 @@ export default function StudentVerificationPage({
     try {
       const [current, recentNotifications] = await Promise.all([
         StudentVerificationAPI.getMine(accessToken),
-        StudentVerificationAPI.getNotifications(accessToken)
+        StudentVerificationAPI.getNotifications(accessToken, student?.studentIdCode || student?.email)
       ]);
       setVerification(current);
       if (current) {
@@ -114,7 +114,16 @@ export default function StudentVerificationPage({
     const timer = window.setTimeout(() => {
       void refresh();
     }, 0);
-    return () => window.clearTimeout(timer);
+    const handleUpdate = () => {
+      void refresh();
+    };
+    window.addEventListener('uvikart:verification_updated', handleUpdate);
+    window.addEventListener('uvikart:new_notification', handleUpdate);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('uvikart:verification_updated', handleUpdate);
+      window.removeEventListener('uvikart:new_notification', handleUpdate);
+    };
   }, [refresh]);
 
   const isValidImageFormat = (file: File) => {

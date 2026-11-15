@@ -331,7 +331,13 @@ export default function AdminVerificationPage({
     setSavingDecision(true);
     setDecisionError('');
     try {
-      await AdminVerificationAPI.decide(accessToken, item.id, 'APPROVED');
+      await AdminVerificationAPI.decide(accessToken, item.id, 'APPROVED', undefined, {
+        user_id: item.user_id || item.id,
+        student_name: item.student_name,
+        email: item.email,
+        phone: item.phone,
+        student_id_code: item.student_id_code
+      });
       setNotice(`Student verification approved for ${item.student_name} (${item.student_id_code || 'STU-2026-0001'}).`);
       setSelected(null);
       setRejectOpen(false);
@@ -360,7 +366,13 @@ export default function AdminVerificationPage({
     setSavingDecision(true);
     setDecisionError('');
     try {
-      await AdminVerificationAPI.decide(accessToken, selected.id, 'REJECTED', finalReason);
+      await AdminVerificationAPI.decide(accessToken, selected.id, 'REJECTED', finalReason, {
+        user_id: selected.user_id || selected.id,
+        student_name: selected.student_name,
+        email: selected.email,
+        phone: selected.phone,
+        student_id_code: selected.student_id_code
+      });
       setNotice(`Verification rejected for ${selected.student_name} (${selected.student_id_code || 'STU-2026-0001'}).`);
       setSelected(null);
       setRejectOpen(false);

@@ -48,3 +48,22 @@ CREATE INDEX IF NOT EXISTS idx_payouts_student_id ON public.payouts(student_id);
 CREATE INDEX IF NOT EXISTS idx_payouts_referral_code ON public.payouts(referral_code);
 CREATE INDEX IF NOT EXISTS idx_payouts_status ON public.payouts(status);
 
+-- Student Notifications and Messages Table
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  student_id TEXT,
+  email TEXT,
+  notification_type TEXT NOT NULL DEFAULT 'verification_rejected',
+  title TEXT,
+  message TEXT NOT NULL,
+  rejection_reason TEXT,
+  remaining_attempts INTEGER DEFAULT 1,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_email ON public.notifications(email);
+
+

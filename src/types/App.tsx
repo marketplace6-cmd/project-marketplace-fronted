@@ -90,14 +90,26 @@ export default function App() {
   // Synchronize student verification lifecycle with Supabase in real-time
   useEffect(() => {
     if (student.authState === 'logged_out') return;
+    const studentId = student.id || 'STU-2026-0001';
+    const email = student.email || '';
+    const numericPart = studentId.replace(/\D/g, '');
+    const numId = numericPart ? Number(numericPart) : null;
+
     const syncStatus = async () => {
       try {
-        const studentId = student.id || 'STU-2026-0001';
-        const email = student.email || '';
-        const { data, error } = await supabase
-          .from('verifications')
-          .select('*')
-          .or(`user_id.eq.${studentId},email.eq.${email},id.eq.${studentId}`)
+        let orList: string[] = [];
+        if (studentId) orList.push(`student_id_code.eq.${studentId}`);
+        if (email) orList.push(`email.eq.${email}`);
+        if (numId) {
+          orList.push(`user_id.eq.${numId}`);
+          orList.push(`id.eq.${numId}`);
+        }
+
+        const query = orList.length > 0
+          ? supabase.from('verifications').select('*').or(orList.join(','))
+          : supabase.from('verifications').select('*');
+
+        const { data, error } = await query
           .order('updated_at', { ascending: false })
           .limit(1);
 
@@ -105,21 +117,21 @@ export default function App() {
           const row = data[0];
           const rejCount = Number(row.rejection_count || 0);
           if (row.status === 'APPROVED' || row.status === 'VERIFIED') {
-            setStudent((prev) => (prev.authState === 'verified' ? prev : {
+            setStudent((prev) => (prev.authState === 'verified' && prev.rejectionCount === 0 ? prev : {
               ...prev,
               authState: 'verified',
               rejectionCount: 0,
               rejectionReason: undefined
             }));
           } else if (row.status === 'BLOCKED' || rejCount >= 2) {
-            setStudent((prev) => (prev.authState === 'verification_blocked' && prev.rejectionCount === rejCount ? prev : {
+            setStudent((prev) => (prev.authState === 'verification_blocked' && prev.rejectionCount === rejCount && prev.rejectionReason === row.rejection_reason ? prev : {
               ...prev,
               authState: 'verification_blocked',
               rejectionCount: rejCount >= 2 ? rejCount : 2,
               rejectionReason: row.rejection_reason || undefined
             }));
           } else if (row.status === 'REJECTED') {
-            setStudent((prev) => (prev.authState === 'verification_rejected' && prev.rejectionCount === rejCount ? prev : {
+            setStudent((prev) => (prev.authState === 'verification_rejected' && prev.rejectionCount === rejCount && prev.rejectionReason === row.rejection_reason ? prev : {
               ...prev,
               authState: 'verification_rejected',
               rejectionCount: rejCount || 1,
@@ -139,6 +151,49 @@ export default function App() {
       }
     };
     void syncStatus();
+
+    // Supabase Real-time channel for verification updates
+    const channel = supabase
+      .channel('student-verification-lifecycle')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'verifications' }, () => {
+        void syncStatus();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+        const newNotif = payload.new as any;
+        if (newNotif && (newNotif.student_id === studentId || newNotif.email === email || (numId && String(newNotif.user_id) === String(numId)))) {
+          void syncStatus();
+        }
+      })
+      .subscribe();
+
+    // In-browser custom event listeners for instant reactivity
+    const handleVerificationUpdated = (e: Event) => {
+      const customEvt = e as CustomEvent;
+      if (customEvt.detail) {
+        const { status, rejectionReason, rejectionCount } = customEvt.detail;
+        if (status === 'APPROVED') {
+          setStudent((prev) => ({ ...prev, authState: 'verified', rejectionCount: 0, rejectionReason: undefined }));
+        } else if (status === 'BLOCKED') {
+          setStudent((prev) => ({ ...prev, authState: 'verification_blocked', rejectionCount: rejectionCount || 2, rejectionReason }));
+        } else if (status === 'REJECTED') {
+          setStudent((prev) => ({ ...prev, authState: 'verification_rejected', rejectionCount: rejectionCount || 1, rejectionReason }));
+        }
+      }
+      void syncStatus();
+    };
+
+    const handleNewNotification = () => {
+      void syncStatus();
+    };
+
+    window.addEventListener('uvikart:verification_updated', handleVerificationUpdated);
+    window.addEventListener('uvikart:new_notification', handleNewNotification);
+
+    return () => {
+      void supabase.removeChannel(channel);
+      window.removeEventListener('uvikart:verification_updated', handleVerificationUpdated);
+      window.removeEventListener('uvikart:new_notification', handleNewNotification);
+    };
   }, [student.authState, student.email, student.id]);
 
   const [projects, setProjects] = useState<ProjectDTO[]>(useMockCatalogue ? INITIAL_PROJECTS : []);
@@ -316,7 +371,7 @@ export default function App() {
         user_id: currentStudentId
       });
 
-      setStudent((prev) => ({ ...prev, authState: 'verification_pending' }));
+      setStudent((prev) => ({ ...prev, authState: 'verification_pending', rejectionReason: undefined }));
       showToast('ID documents (Front & Back) successfully submitted! Admin review pending.', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to submit ID documents. Please try again.', 'error');
@@ -2145,6 +2200,73 @@ export default function App() {
         </div>
 
         <div className="lg:col-span-9 space-y-6">
+          {/* Prominent Verification Rejection Alert Banner at top of dashboard */}
+          {student.authState === 'verification_rejected' && (
+            <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-4 sm:p-5 shadow-xs animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500 text-amber-950 flex items-center justify-center shrink-0 shadow-xs">
+                    <AlertTriangle className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-sm font-extrabold text-amber-950">
+                        Verification Rejected: {student.rejectionReason || 'Blurry student ID photo'}.
+                      </h4>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-200 text-amber-900 border border-amber-300">
+                        {Math.max(0, 2 - (student.rejectionCount || 1))} re-upload attempt{Math.max(0, 2 - (student.rejectionCount || 1)) === 1 ? '' : 's'} remaining
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-900 mt-1 max-w-2xl leading-relaxed">
+                      Your submitted documents were reviewed by the Uvikart administrator. Please re-upload clearer front and back photos of your college ID card (PNG or JPG, max 50 KB each) using the form below to complete verification and unlock PPT previews.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDashboardTab('overview');
+                    setTimeout(() => {
+                      const el = document.getElementById('student-verification-upload-section');
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 100);
+                  }}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-amber-950 text-xs font-bold rounded-xl shadow-xs transition-colors shrink-0 flex items-center justify-center gap-1.5"
+                >
+                  <Upload size={14} /> Re-upload ID Cards &rarr;
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Permanent Verification Restriction Alert Banner at top of dashboard */}
+          {(student.authState === 'verification_blocked' || (student.rejectionCount || 0) >= 2) && (
+            <div className="rounded-2xl border-2 border-rose-400 bg-rose-50 p-4 sm:p-5 shadow-xs animate-in fade-in duration-200">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <AlertCircle className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-extrabold text-rose-950">
+                      Account Restricted from Verification (0 re-upload attempts remaining)
+                    </h4>
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-200 text-rose-900 border border-rose-300">
+                      Permanent Block (2/2 Attempts Used)
+                    </span>
+                  </div>
+                  <p className="text-xs text-rose-900 mt-1 leading-relaxed">
+                    Your submitted ID documents were rejected 2 times. In accordance with Uvikart academic verification policy, your account has been permanently restricted from submitting additional verification documents.
+                  </p>
+                  {student.rejectionReason && (
+                    <p className="mt-2 text-xs font-semibold text-rose-900 bg-rose-100/80 p-2.5 rounded-lg border border-rose-200">
+                      <strong>Admin Rejection Reason:</strong> {student.rejectionReason}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="grid sm:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200">
               <div className="text-xs text-slate-500">Preview Credits</div>
@@ -2341,7 +2463,7 @@ export default function App() {
                 </div>
               ) : (
                 /* 3. Upload Form with Rejection Warning Banner (if rejected and remaining attempts > 0) */
-                <div className="mt-6 bg-amber-50/80 border border-amber-200 rounded-3xl p-6 shadow-xs">
+                <div id="student-verification-upload-section" className="mt-6 bg-amber-50/80 border border-amber-200 rounded-3xl p-6 shadow-xs">
                   {/* Rejection Warning Banner */}
                   {student.authState === 'verification_rejected' && (
                     <div className="mb-5 rounded-2xl border-2 border-amber-300 bg-amber-100/70 p-4 shadow-xs">

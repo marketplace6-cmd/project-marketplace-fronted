@@ -57,6 +57,9 @@ export interface StudentNotification {
   message: string;
   is_read: boolean;
   created_at: string;
+  title?: string;
+  rejection_reason?: string | null;
+  remaining_attempts?: number;
 }
 
 export interface VerificationChallenge {
@@ -270,16 +273,73 @@ export const StudentVerificationAPI = {
     }
   },
 
-  async getNotifications(accessToken: string): Promise<StudentNotification[]> {
+  async getNotifications(accessToken: string, studentIdentifier?: string): Promise<StudentNotification[]> {
+    let apiNotifs: StudentNotification[] = [];
     try {
       const data = await request('/notifications/me', accessToken);
-      if (!Array.isArray(data) || !data.every(isNotification)) {
-        throw new VerificationApiError('Notification response is invalid.', 502);
+      if (Array.isArray(data) && data.every(isNotification)) {
+        apiNotifs = data;
       }
-      return data;
     } catch {
-      return [];
+      /* continue to Supabase and local cache */
     }
+
+    let sbNotifs: StudentNotification[] = [];
+    try {
+      let sbQuery = supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(20);
+      if (studentIdentifier) {
+        sbQuery = sbQuery.or(`user_id.eq.${studentIdentifier},student_id.eq.${studentIdentifier},email.eq.${studentIdentifier}`);
+      }
+      const { data } = await sbQuery;
+      if (data && Array.isArray(data)) {
+        sbNotifs = data.map((d: any) => ({
+          id: Number(d.id),
+          notification_type: d.notification_type || 'verification_rejected',
+          message: d.message,
+          is_read: Boolean(d.is_read),
+          created_at: d.created_at || new Date().toISOString(),
+          title: d.title || undefined,
+          rejection_reason: d.rejection_reason || undefined,
+          remaining_attempts: typeof d.remaining_attempts === 'number' ? d.remaining_attempts : undefined
+        }));
+      }
+    } catch {
+      /* continue to local cache */
+    }
+
+    let localNotifs: StudentNotification[] = [];
+    try {
+      const raw = localStorage.getItem('cpm_student_notifications');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          localNotifs = parsed.map((item: any) => ({
+            id: Number(item.id || Date.now()),
+            notification_type: item.notification_type || 'verification_rejected',
+            message: item.message,
+            is_read: Boolean(item.is_read),
+            created_at: item.created_at || new Date().toISOString(),
+            title: item.title || undefined,
+            rejection_reason: item.rejection_reason || undefined,
+            remaining_attempts: typeof item.remaining_attempts === 'number' ? item.remaining_attempts : undefined
+          }));
+        }
+      }
+    } catch {
+      /* continue */
+    }
+
+    const combined = [...apiNotifs, ...sbNotifs, ...localNotifs];
+    const seen = new Set<string>();
+    const result: StudentNotification[] = [];
+    for (const n of combined) {
+      const key = `${n.notification_type}-${n.message}-${n.created_at.slice(0, 16)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(n);
+      }
+    }
+    return result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   },
 
   async submit(
@@ -431,7 +491,12 @@ export const StudentVerificationAPI = {
       (i) => i.email === details.email || i.student_id_code === details.student_id_code || i.user_id === userId
     );
     if (existingIdx !== -1) {
-      localItems[existingIdx] = { ...localItems[existingIdx], ...newItem };
+      localItems[existingIdx] = {
+        ...localItems[existingIdx],
+        ...newItem,
+        status: 'PENDING',
+        rejection_reason: null
+      };
     } else {
       localItems.unshift(newItem);
     }
@@ -458,6 +523,28 @@ export const StudentVerificationAPI = {
     saveLocalStudentVerification(studentStatus);
 
     try {
+      const sessRaw = localStorage.getItem('cpm_student_session');
+      if (sessRaw) {
+        const sess = JSON.parse(sessRaw);
+        sess.authState = 'verification_pending';
+        sess.rejectionReason = undefined;
+        localStorage.setItem('cpm_student_session', JSON.stringify(sess));
+      }
+    } catch {
+      /* ignore */
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('uvikart:verification_updated', {
+        detail: {
+          verificationId: userId,
+          status: 'PENDING',
+          student_id_code: details.student_id_code
+        }
+      }));
+    }
+
+    try {
       const record = {
         user_id: userId,
         student_name: details.student_name,
@@ -468,6 +555,7 @@ export const StudentVerificationAPI = {
         student_id_code: details.student_id_code,
         referral_code: details.referral_code,
         status: 'PENDING',
+        rejection_reason: null,
         payment_phone: details.phone,
         document_name: details.front_filename,
         document_type: details.back_data_url ? 'Student ID Card (Front & Back)' : 'Student ID Card (Front Side)',
@@ -475,13 +563,20 @@ export const StudentVerificationAPI = {
         back_image_url: details.back_data_url || null,
         front_data_url: details.front_data_url,
         back_data_url: details.back_data_url || null,
-        submitted_at: now
+        submitted_at: now,
+        updated_at: now
       };
 
       const { error } = await supabase.from('verifications').upsert([record], { onConflict: 'email' });
       if (error) {
-        // Fallback: insert directly or update
-        await supabase.from('verifications').insert([record]);
+        // Fallback: update or insert
+        const { error: updateError } = await supabase
+          .from('verifications')
+          .update(record)
+          .or(`email.eq.${details.email},student_id_code.eq.${details.student_id_code},user_id.eq.${userId}`);
+        if (updateError) {
+          await supabase.from('verifications').insert([record]);
+        }
       }
     } catch {
       /* ignore Supabase error */
@@ -979,7 +1074,14 @@ export const AdminVerificationAPI = {
     accessToken: string,
     verificationId: number,
     status: 'APPROVED' | 'REJECTED',
-    rejectionReason?: string
+    rejectionReason?: string,
+    studentMeta?: {
+      user_id?: string | number;
+      student_name?: string;
+      email?: string | null;
+      phone?: string | null;
+      student_id_code?: string;
+    }
   ): Promise<void> {
     // 1. Calculate rejection counter
     const all = loadLocalVerifications();
@@ -994,6 +1096,12 @@ export const AdminVerificationAPI = {
 
     const finalStatus: 'APPROVED' | 'REJECTED' | 'BLOCKED' =
       status === 'APPROVED' ? 'APPROVED' : newRejectionCount >= 2 ? 'BLOCKED' : 'REJECTED';
+    const remainingAttempts = status === 'APPROVED' ? 2 : Math.max(0, 2 - newRejectionCount);
+
+    const studentUserIdentifier = String(studentMeta?.user_id || (idx !== -1 ? all[idx].user_id : verificationId));
+    const studentCodeIdentifier = studentMeta?.student_id_code || (idx !== -1 ? all[idx].student_id_code : `STU-2026-${studentUserIdentifier}`);
+    const studentEmail = studentMeta?.email || (idx !== -1 ? all[idx].email : null);
+    const now = new Date().toISOString();
 
     try {
       await request(`/admin/verification/${verificationId}/decision`, accessToken, {
@@ -1004,19 +1112,103 @@ export const AdminVerificationAPI = {
       /* continue to Supabase & local state sync */
     }
 
-    // 2. Update Supabase
+    // 2. Update Supabase verifications
     try {
       await supabase.from('verifications').update({
         status: finalStatus,
         rejection_reason: rejectionReason || null,
         rejection_count: newRejectionCount,
-        updated_at: new Date().toISOString()
-      }).or(`id.eq.${verificationId},user_id.eq.${verificationId}`);
+        updated_at: now
+      }).or(`id.eq.${verificationId},user_id.eq.${verificationId}${studentCodeIdentifier ? `,student_id_code.eq.${studentCodeIdentifier}` : ''}`);
     } catch {
       /* ignore Supabase error */
     }
 
-    // 3. Update local verification queue
+    // 3. Automated Notification Generation & Logging
+    if (status === 'REJECTED') {
+      const notifTitle = finalStatus === 'BLOCKED'
+        ? 'Verification Account Restricted'
+        : 'Verification Rejected';
+      const notifMessage = finalStatus === 'BLOCKED'
+        ? `Your student ID verification was rejected. Reason: "${rejectionReason}". Maximum attempts (2) reached. Your account has been permanently restricted from further verification.`
+        : `Verification Rejected: ${rejectionReason}. You have ${remainingAttempts} re-upload attempt remaining.`;
+
+      const notificationRecord = {
+        user_id: studentUserIdentifier,
+        student_id: studentCodeIdentifier,
+        email: studentEmail,
+        notification_type: finalStatus === 'BLOCKED' ? 'verification_blocked' : 'verification_rejected',
+        title: notifTitle,
+        message: notifMessage,
+        rejection_reason: rejectionReason || null,
+        remaining_attempts: remainingAttempts,
+        is_read: false,
+        created_at: now
+      };
+
+      try {
+        await supabase.from('notifications').insert([notificationRecord]);
+      } catch {
+        /* ignore Supabase error */
+      }
+
+      try {
+        const notifsRaw = localStorage.getItem('cpm_student_notifications');
+        const notifList = notifsRaw ? JSON.parse(notifsRaw) : [];
+        notifList.unshift({
+          id: Date.now(),
+          notification_type: notificationRecord.notification_type,
+          title: notifTitle,
+          message: notifMessage,
+          rejection_reason: rejectionReason,
+          remaining_attempts: remainingAttempts,
+          is_read: false,
+          created_at: now
+        });
+        localStorage.setItem('cpm_student_notifications', JSON.stringify(notifList));
+      } catch {
+        /* ignore */
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('uvikart:new_notification', {
+          detail: notificationRecord
+        }));
+      }
+    } else if (status === 'APPROVED') {
+      const approvalRecord = {
+        user_id: studentUserIdentifier,
+        student_id: studentCodeIdentifier,
+        email: studentEmail,
+        notification_type: 'verification_approved',
+        title: 'Student Verification Approved',
+        message: 'Congratulations! Your student ID verification has been approved. PPT previews and full student benefits are now unlocked.',
+        rejection_reason: null,
+        remaining_attempts: 2,
+        is_read: false,
+        created_at: now
+      };
+
+      try {
+        await supabase.from('notifications').insert([approvalRecord]);
+      } catch {
+        /* ignore */
+      }
+
+      try {
+        const notifsRaw = localStorage.getItem('cpm_student_notifications');
+        const notifList = notifsRaw ? JSON.parse(notifsRaw) : [];
+        notifList.unshift({
+          id: Date.now(),
+          ...approvalRecord
+        });
+        localStorage.setItem('cpm_student_notifications', JSON.stringify(notifList));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 4. Update local verification queue
     if (idx !== -1) {
       all[idx] = {
         ...all[idx],
@@ -1027,7 +1219,7 @@ export const AdminVerificationAPI = {
       saveLocalVerifications(all);
     }
 
-    // 4. Update local student verification record
+    // 5. Update local student verification record
     try {
       const currentVerif = getLocalStudentVerification();
       if (currentVerif) {
@@ -1040,7 +1232,7 @@ export const AdminVerificationAPI = {
       /* ignore */
     }
 
-    // 5. Update student session authState
+    // 6. Update student session authState
     try {
       const sessRaw = localStorage.getItem('cpm_student_session');
       if (sessRaw) {
@@ -1050,7 +1242,7 @@ export const AdminVerificationAPI = {
           sess.rejectionCount = 0;
           sess.rejectionReason = undefined;
         } else {
-          sess.authState = newRejectionCount >= 2 ? 'verification_blocked' : 'verification_rejected';
+          sess.authState = finalStatus === 'BLOCKED' ? 'verification_blocked' : 'verification_rejected';
           sess.rejectionCount = newRejectionCount;
           sess.rejectionReason = rejectionReason;
         }
@@ -1058,6 +1250,21 @@ export const AdminVerificationAPI = {
       }
     } catch {
       /* ignore */
+    }
+
+    // 7. Dispatch verification updated event
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('uvikart:verification_updated', {
+        detail: {
+          verificationId,
+          user_id: studentUserIdentifier,
+          student_id_code: studentCodeIdentifier,
+          status: finalStatus,
+          rejectionReason,
+          rejectionCount: newRejectionCount,
+          remainingAttempts
+        }
+      }));
     }
   }
 };

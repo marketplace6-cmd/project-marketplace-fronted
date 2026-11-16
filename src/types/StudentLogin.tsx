@@ -117,7 +117,7 @@ export default function StudentLogin({
       previewStats: {
         totalAllowed: 5,
         usedPreviews: 0,
-        remainingPreviews: isVerified ? 5 : 0,
+        remainingPreviews: 5,
         nextResetDate: '90-Day Cycle'
       },
       rejectionCount: rejCount,

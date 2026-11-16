@@ -193,13 +193,7 @@ export default function ProfilePage({
       if (onUpdateProfile) {
         onUpdateProfile({
           authState: 'verification_pending',
-          rejectionReason: undefined,
-          previewStats: {
-            totalAllowed: 5,
-            usedPreviews: 0,
-            remainingPreviews: 0,
-            nextResetDate: '90-Day Cycle'
-          }
+          rejectionReason: undefined
         });
       }
 
@@ -282,13 +276,7 @@ export default function ProfilePage({
             ? 'verification_pending'
             : 'logged_in',
           rejectionCount: rejCount,
-          rejectionReason: v.rejection_reason || undefined,
-          previewStats: {
-            totalAllowed: 5,
-            usedPreviews: 0,
-            remainingPreviews: isVerified ? 5 : 0,
-            nextResetDate: '90-Day Cycle'
-          }
+          rejectionReason: v.rejection_reason || undefined
         };
 
         if (onUpdateProfile) {
@@ -301,13 +289,7 @@ export default function ProfilePage({
           onUpdateProfile({
             authState: 'logged_in',
             rejectionCount: 0,
-            rejectionReason: undefined,
-            previewStats: {
-              totalAllowed: 5,
-              usedPreviews: 0,
-              remainingPreviews: 0,
-              nextResetDate: '90-Day Cycle'
-            }
+            rejectionReason: undefined
           });
         }
       }

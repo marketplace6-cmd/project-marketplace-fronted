@@ -1,4 +1,4 @@
-﻿import { ProjectDTO, StudentProfile, MeetingRecord, OrderRecord, SupportTicket } from './types';
+import { ProjectDTO, StudentProfile, MeetingRecord, OrderRecord, SupportTicket } from './types';
 
 export const INITIAL_PROJECTS: ProjectDTO[] = [];
 
@@ -16,7 +16,7 @@ export const INITIAL_STUDENT: StudentProfile = {
   previewStats: {
     totalAllowed: 5,
     usedPreviews: 0,
-    remainingPreviews: 0,
+    remainingPreviews: 5,
     nextResetDate: '90-Day Cycle'
   },
   viewedProjectIds: [],

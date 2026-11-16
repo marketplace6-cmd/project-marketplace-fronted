@@ -209,7 +209,7 @@ export default function StudentSignup({
       previewStats: {
         totalAllowed: 5,
         usedPreviews: 0,
-        remainingPreviews: 0,
+        remainingPreviews: 5,
         nextResetDate: '90-Day Cycle'
       },
       role: 'student'

@@ -64,6 +64,56 @@ const CATEGORIES: { name: ProjectCategory; icon: React.ReactNode; count: string 
   { name: 'Cloud Computing', icon: <Cloud className="w-5 h-5 text-sky-600" />, count: '16+ Projects' },
 ];
 
+export const getStudentStorageKey = (stu?: { email?: string; id?: string }): string => {
+  const email = stu?.email?.toLowerCase().trim();
+  if (email) return email;
+  const id = stu?.id?.trim();
+  if (id && id !== 'STU-000-000') return id;
+  return 'default_user';
+};
+
+export const getScopedViewedProjects = (userKey: string): string[] => {
+  if (!userKey || userKey === 'default_user') return [];
+  try {
+    const raw = localStorage.getItem(`cpm_viewed_projects_${userKey}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    }
+  } catch { /* ignore */ }
+  return [];
+};
+
+export const resolveUserPreviewStats = (stu?: {
+  email?: string;
+  id?: string;
+  viewedProjectIds?: string[];
+  previewStats?: any;
+}) => {
+  const userKey = getStudentStorageKey(stu);
+  const storedViewed = getScopedViewedProjects(userKey);
+  const combinedViewed = Array.from(
+    new Set([
+      ...(Array.isArray(stu?.viewedProjectIds) ? stu!.viewedProjectIds : []),
+      ...storedViewed,
+    ])
+  );
+
+  const totalAllowed = 5;
+  const usedPreviews = combinedViewed.length;
+  const remainingPreviews = Math.max(0, totalAllowed - usedPreviews);
+
+  return {
+    viewedProjectIds: combinedViewed,
+    previewStats: {
+      totalAllowed,
+      usedPreviews,
+      remainingPreviews,
+      nextResetDate: stu?.previewStats?.nextResetDate || '90-Day Cycle',
+    },
+  };
+};
+
 export default function App() {
   // Persistent state using localStorage
   const [currentRoute, setCurrentRoute] = useState<PageRoute>(() => {
@@ -79,11 +129,26 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.authState && parsed.authState !== 'logged_out' && (parsed.email || parsed.id)) {
-          return parsed;
+          const { viewedProjectIds, previewStats } = resolveUserPreviewStats(parsed);
+          return {
+            ...parsed,
+            viewedProjectIds,
+            previewStats,
+          };
         }
       } catch { /* fallback */ }
     }
-    return { ...INITIAL_STUDENT, authState: 'logged_out' };
+    return {
+      ...INITIAL_STUDENT,
+      authState: 'logged_out',
+      previewStats: {
+        totalAllowed: 5,
+        usedPreviews: 0,
+        remainingPreviews: 5,
+        nextResetDate: '90-Day Cycle',
+      },
+      viewedProjectIds: [],
+    };
   });
 
   useEffect(() => {
@@ -128,12 +193,17 @@ export default function App() {
           const row = data[0];
           const rejCount = Number(row.rejection_count || 0);
           if (row.status === 'APPROVED' || row.status === 'VERIFIED') {
-            setStudent((prev) => (prev.authState === 'verified' && prev.rejectionCount === 0 ? prev : {
-              ...prev,
-              authState: 'verified',
-              rejectionCount: 0,
-              rejectionReason: undefined
-            }));
+            setStudent((prev) => {
+              const { viewedProjectIds, previewStats } = resolveUserPreviewStats(prev);
+              return {
+                ...prev,
+                authState: 'verified',
+                rejectionCount: 0,
+                rejectionReason: undefined,
+                viewedProjectIds,
+                previewStats,
+              };
+            });
           } else if (row.status === 'BLOCKED' || rejCount >= 2) {
             setStudent((prev) => (prev.authState === 'verification_blocked' && prev.rejectionCount === rejCount && prev.rejectionReason === row.rejection_reason ? prev : {
               ...prev,
@@ -183,7 +253,17 @@ export default function App() {
       if (customEvt.detail) {
         const { status, rejectionReason, rejectionCount } = customEvt.detail;
         if (status === 'APPROVED') {
-          setStudent((prev) => ({ ...prev, authState: 'verified', rejectionCount: 0, rejectionReason: undefined }));
+          setStudent((prev) => {
+            const { viewedProjectIds, previewStats } = resolveUserPreviewStats(prev);
+            return {
+              ...prev,
+              authState: 'verified',
+              rejectionCount: 0,
+              rejectionReason: undefined,
+              viewedProjectIds,
+              previewStats,
+            };
+          });
         } else if (status === 'BLOCKED') {
           setStudent((prev) => ({ ...prev, authState: 'verification_blocked', rejectionCount: rejectionCount || 2, rejectionReason }));
         } else if (status === 'REJECTED') {
@@ -554,7 +634,17 @@ export default function App() {
   }, []);
 
   const handleStudentApproved = useCallback(() => {
-    setStudent((previous) => ({ ...previous, authState: 'verified' }));
+    setStudent((previous) => {
+      const { viewedProjectIds, previewStats } = resolveUserPreviewStats(previous);
+      return {
+        ...previous,
+        authState: 'verified',
+        rejectionCount: 0,
+        rejectionReason: undefined,
+        viewedProjectIds,
+        previewStats,
+      };
+    });
   }, []);
 
   const handleStudentSelectionsLoaded = useCallback((projectIds: string[]) => {
@@ -990,21 +1080,26 @@ export default function App() {
       return;
     }
 
-    const alreadyViewed = student.viewedProjectIds.includes(project.id);
-    if (!alreadyViewed && student.previewStats.remainingPreviews <= 0) {
-      showToast(`Preview limit reached (0/5 credits left). Next reset: ${student.previewStats.nextResetDate}`, 'error');
+    const userKey = getStudentStorageKey(student);
+    const storedViewed = getScopedViewedProjects(userKey);
+    const combinedViewed = Array.from(new Set([...(student.viewedProjectIds || []), ...storedViewed]));
+    const alreadyViewed = combinedViewed.includes(project.id);
+
+    if (!alreadyViewed && combinedViewed.length >= 5) {
+      showToast(`Preview limit reached (0/5 credits left). Next reset: ${student.previewStats?.nextResetDate || '90-Day Cycle'}`, 'error');
       return;
     }
 
     if (!alreadyViewed) {
+      const updatedViewed = [...combinedViewed, project.id];
+      try {
+        localStorage.setItem(`cpm_viewed_projects_${userKey}`, JSON.stringify(updatedViewed));
+      } catch { /* ignore */ }
+      const newStats = resolveUserPreviewStats({ ...student, viewedProjectIds: updatedViewed });
       setStudent((prev) => ({
         ...prev,
-        viewedProjectIds: [...prev.viewedProjectIds, project.id],
-        previewStats: {
-          ...prev.previewStats,
-          usedPreviews: prev.previewStats.usedPreviews + 1,
-          remainingPreviews: prev.previewStats.remainingPreviews - 1,
-        },
+        viewedProjectIds: updatedViewed,
+        previewStats: newStats.previewStats,
       }));
       showToast('1 PPT Preview Credit used. Watermarked preview unlocked.', 'info');
     }
@@ -1918,11 +2013,15 @@ export default function App() {
           onNavigateDashboard={() => navigate('dashboard')}
           onSuccess={({ user, session, studentProfile }) => {
             if (studentProfile) {
-              setStudent((prev) => ({
-                ...prev,
-                ...studentProfile,
-                role: 'student'
-              }));
+              setStudent((prev) => {
+                const merged = { ...prev, ...studentProfile, role: 'student' as const };
+                const { viewedProjectIds, previewStats } = resolveUserPreviewStats(merged);
+                return {
+                  ...merged,
+                  viewedProjectIds,
+                  previewStats,
+                };
+              });
             }
             navigate('dashboard');
           }}
@@ -1939,11 +2038,15 @@ export default function App() {
           onNavigateDashboard={() => navigate('dashboard')}
           onSuccess={({ studentProfile }) => {
             if (studentProfile) {
-              setStudent((prev) => ({
-                ...prev,
-                ...studentProfile,
-                role: 'student'
-              }));
+              setStudent((prev) => {
+                const merged = { ...prev, ...studentProfile, role: 'student' as const };
+                const { viewedProjectIds, previewStats } = resolveUserPreviewStats(merged);
+                return {
+                  ...merged,
+                  viewedProjectIds,
+                  previewStats,
+                };
+              });
             }
             navigate('dashboard');
           }}
@@ -1955,7 +2058,15 @@ export default function App() {
       return (
         <ProfilePage
           student={student}
-          onUpdateProfile={(updated) => setStudent((prev) => ({ ...prev, ...updated }))}
+          onUpdateProfile={(updated) => setStudent((prev) => {
+            const merged = { ...prev, ...updated };
+            const { viewedProjectIds, previewStats } = resolveUserPreviewStats(merged);
+            return {
+              ...merged,
+              viewedProjectIds,
+              previewStats,
+            };
+          })}
           onNavigateVerification={() => navigate('verification')}
           onNavigateReferrals={() => setShareEarnModalOpen(true)}
           showToast={showToast}
@@ -2247,7 +2358,17 @@ export default function App() {
                     );
                   }
                 }
-                setStudent({ ...INITIAL_STUDENT, authState: 'logged_out' });
+                setStudent({
+                  ...INITIAL_STUDENT,
+                  authState: 'logged_out',
+                  previewStats: {
+                    totalAllowed: 5,
+                    usedPreviews: 0,
+                    remainingPreviews: 5,
+                    nextResetDate: '90-Day Cycle'
+                  },
+                  viewedProjectIds: []
+                });
                 localStorage.removeItem('cpm_student_session');
                 navigate('login');
                 if (sessionRevoked) showToast('Logged out successfully.', 'info');
@@ -2456,7 +2577,7 @@ export default function App() {
                 <div>
                   <span className="font-bold text-indigo-950">90-Day Preview Reset Schedule:</span>{' '}
                   <span className="text-indigo-800">
-                    Used: {student.previewStats.usedPreviews} • Remaining: {student.previewStats.remainingPreviews} • Next Reset: {student.previewStats.nextResetDate}
+                    Used: {student.previewStats?.usedPreviews ?? 0} • Remaining: {student.previewStats?.remainingPreviews ?? 5} • Next Reset: {student.previewStats?.nextResetDate || '90-Day Cycle'}
                   </span>
                 </div>
                 <button

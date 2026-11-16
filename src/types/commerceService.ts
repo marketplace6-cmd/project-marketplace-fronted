@@ -1,5 +1,6 @@
 import { VerificationApiError } from './verificationService';
 import { supabase } from '../utils/supabase/client';
+import { creditReferralReward } from './referralService';
 
 export interface CommercePage<T> {
   items: T[];
@@ -10,22 +11,29 @@ export interface CommercePage<T> {
 
 export interface AdminOrderRecord {
   id: number;
-  user_id: number;
+  user_id: number | string;
+  student_id?: string | null;
+  student_name: string;
+  student_email?: string | null;
   project_id: number;
+  project_title: string;
   status: string;
   amount: number;
   currency: string;
   created_at: string;
   updated_at: string;
-  project_title: string;
   payment_status: string | null;
-  student_name: string;
+  utr_number?: string | null;
+  payment_screenshot_url?: string | null;
+  deliverable_url?: string | null;
+  invoice_number?: string | null;
 }
 
 export interface MeetingRecordDTO {
   id: number;
-  student_id: number;
+  student_id: number | string;
   student_name?: string | null;
+  student_email?: string | null;
   project_id: number;
   project_title: string;
   guide_id: number;
@@ -36,21 +44,30 @@ export interface MeetingRecordDTO {
   google_meet_url: string | null;
   payment_status?: string | null;
   reviewed_at?: string | null;
+  requested_date?: string | null;
+  time_slot?: string | null;
   created_at: string;
   updated_at?: string;
 }
 
 export interface StudentOrderRecord {
   id: number;
-  user_id: number;
+  user_id: number | string;
+  student_id?: string | null;
+  student_name?: string | null;
+  student_email?: string | null;
   project_id: number;
+  project_title: string;
   status: string;
   amount: number;
   currency: string;
   created_at: string;
   updated_at: string;
-  project_title: string;
   payment_status: string | null;
+  utr_number?: string | null;
+  payment_screenshot_url?: string | null;
+  deliverable_url?: string | null;
+  invoice_number?: string | null;
 }
 
 export interface SelectionRecord {
@@ -68,26 +85,6 @@ export interface CommerceNotification {
   created_at: string;
 }
 
-async function parseResponse(response: Response): Promise<unknown> {
-  if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-    try {
-      const body: unknown = await response.json();
-      if (typeof body === 'object' && body !== null && 'detail' in body && typeof body.detail === 'string') {
-        message = body.detail;
-      }
-    } catch {
-      // Retain the HTTP status when the server does not return JSON.
-    }
-    throw new VerificationApiError(message, response.status);
-  }
-  try {
-    return await response.json();
-  } catch {
-    throw new VerificationApiError('Commerce service returned an invalid response.', 502);
-  }
-}
-
 const configuredBaseUrl = (import.meta.env.VITE_ADMIN_API_BASE_URL || 'http://localhost:8000/api/v1')
   .replace(/\/+$/, '');
 export const commerceApiBaseUrl = configuredBaseUrl.endsWith('/api/v1')
@@ -96,287 +93,463 @@ export const commerceApiBaseUrl = configuredBaseUrl.endsWith('/api/v1')
     ? `${configuredBaseUrl}/v1`
     : `${configuredBaseUrl}/api/v1`;
 
-async function authorized<T>(path: string, accessToken: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  headers.set('Authorization', `Bearer ${accessToken}`);
-  if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-  return await parseResponse(await fetch(`${commerceApiBaseUrl}${path}`, {
-    ...options,
-    headers,
-    cache: 'no-store'
-  })) as T;
-}
-
-function isPage<T>(
-  value: unknown,
-  isItem: (item: unknown) => item is T
-): value is CommercePage<T> {
-  if (typeof value !== 'object' || value === null || !('items' in value) || !('total' in value) || !('page' in value) || !('page_size' in value)) {
-    return false;
-  }
-  const page = value as Record<string, unknown>;
-  return Array.isArray(page.items)
-    && page.items.every(isItem)
-    && typeof page.total === 'number'
-    && typeof page.page === 'number'
-    && typeof page.page_size === 'number';
-}
-
-function optionalString(value: unknown): value is string | null {
-  return value === undefined || value === null || typeof value === 'string';
-}
-
-function isAdminOrder(value: unknown): value is AdminOrderRecord {
-  if (typeof value !== 'object' || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.id === 'number'
-    && typeof item.user_id === 'number'
-    && typeof item.project_id === 'number'
-    && typeof item.status === 'string'
-    && typeof item.amount === 'number'
-    && typeof item.currency === 'string'
-    && typeof item.created_at === 'string'
-    && typeof item.updated_at === 'string'
-    && typeof item.project_title === 'string'
-    && optionalString(item.payment_status)
-    && typeof item.student_name === 'string';
-}
-
-function isMeeting(value: unknown): value is MeetingRecordDTO {
-  if (typeof value !== 'object' || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.id === 'number'
-    && typeof item.student_id === 'number'
-    && optionalString(item.student_name)
-    && typeof item.project_id === 'number'
-    && typeof item.project_title === 'string'
-    && typeof item.guide_id === 'number'
-    && typeof item.start_time === 'string'
-    && typeof item.end_time === 'string'
-    && typeof item.timezone === 'string'
-    && typeof item.status === 'string'
-    && optionalString(item.google_meet_url)
-    && optionalString(item.payment_status)
-    && optionalString(item.reviewed_at)
-    && typeof item.created_at === 'string';
-}
-
-function isStudentOrder(value: unknown): value is StudentOrderRecord {
-  if (typeof value !== 'object' || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.id === 'number'
-    && typeof item.user_id === 'number'
-    && typeof item.project_id === 'number'
-    && typeof item.status === 'string'
-    && typeof item.amount === 'number'
-    && typeof item.currency === 'string'
-    && typeof item.created_at === 'string'
-    && typeof item.updated_at === 'string'
-    && typeof item.project_title === 'string'
-    && optionalString(item.payment_status);
-}
-
-function isSelection(value: unknown): value is SelectionRecord {
-  if (typeof value !== 'object' || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.id === 'number'
-    && typeof item.project_id === 'number'
-    && typeof item.selected_at === 'string'
-    && typeof item.is_active === 'boolean';
-}
-
-function isCommerceNotification(value: unknown): value is CommerceNotification {
-  if (typeof value !== 'object' || value === null) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.id === 'number'
-    && typeof item.notification_type === 'string'
-    && typeof item.message === 'string'
-    && typeof item.is_read === 'boolean'
-    && typeof item.created_at === 'string';
-}
-
 export const AdminCommerceAPI = {
+  /**
+   * List orders for Admin with live Supabase query
+   */
   async listOrders(
     token: string,
     filters: { search: string; paymentStatus: string; orderStatus: string; page: number }
   ): Promise<CommercePage<AdminOrderRecord>> {
     try {
-      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
-      if (filters.search) query.set('search', filters.search);
-      if (filters.paymentStatus) query.set('payment_status', filters.paymentStatus);
-      if (filters.orderStatus) query.set('order_status', filters.orderStatus);
-      const result: unknown = await authorized(`/admin/management/orders?${query}`, token);
-      if (!isPage(result, isAdminOrder)) throw new VerificationApiError('Admin order response is invalid.', 502);
-      return result;
-    } catch {
-      // Supabase fallback
-      try {
-        let sbQuery = supabase.from('orders').select('*', { count: 'exact' });
-        if (filters.paymentStatus) sbQuery = sbQuery.eq('payment_status', filters.paymentStatus);
-        if (filters.orderStatus) sbQuery = sbQuery.eq('status', filters.orderStatus);
-        if (filters.search) sbQuery = sbQuery.or(`student_name.ilike.%${filters.search}%,project_title.ilike.%${filters.search}%`);
-        const { data, count, error } = await sbQuery.order('id', { ascending: false });
-        if (!error && data && data.length > 0) {
-          const items: AdminOrderRecord[] = data.map((d: any) => ({
-            id: Number(d.id),
-            user_id: Number(d.user_id),
-            project_id: Number(d.project_id),
-            status: d.status,
-            amount: Number(d.amount),
-            currency: d.currency || 'INR',
-            created_at: d.created_at || new Date().toISOString(),
-            updated_at: d.updated_at || new Date().toISOString(),
-            project_title: d.project_title,
-            payment_status: d.payment_status || null,
-            student_name: d.student_name
-          }));
-          return { items, total: count || items.length, page: filters.page, page_size: 25 };
-        }
-      } catch {
-        /* proceed to empty */
+      let sbQuery = supabase.from('orders').select('*', { count: 'exact' });
+      if (filters.paymentStatus) sbQuery = sbQuery.eq('payment_status', filters.paymentStatus);
+      if (filters.orderStatus) sbQuery = sbQuery.eq('status', filters.orderStatus);
+      if (filters.search) {
+        sbQuery = sbQuery.or(
+          `student_name.ilike.%${filters.search}%,project_title.ilike.%${filters.search}%,utr_number.ilike.%${filters.search}%,student_email.ilike.%${filters.search}%,invoice_number.ilike.%${filters.search}%`
+        );
       }
-      return { items: [], total: 0, page: filters.page, page_size: 25 };
+      const from = (filters.page - 1) * 25;
+      const to = from + 24;
+      const { data, count, error } = await sbQuery.order('id', { ascending: false }).range(from, to);
+
+      if (!error && Array.isArray(data)) {
+        const items: AdminOrderRecord[] = data.map((d: any) => ({
+          id: Number(d.id),
+          user_id: d.user_id,
+          student_id: d.student_id || String(d.user_id),
+          student_name: d.student_name || 'Student',
+          student_email: d.student_email || null,
+          project_id: Number(d.project_id),
+          project_title: d.project_title,
+          status: d.status || 'PENDING',
+          amount: Number(d.amount) || 0,
+          currency: d.currency || 'INR',
+          created_at: d.created_at || new Date().toISOString(),
+          updated_at: d.updated_at || new Date().toISOString(),
+          payment_status: d.payment_status || 'AWAITING_VERIFICATION',
+          utr_number: d.utr_number || null,
+          payment_screenshot_url: d.payment_screenshot_url || null,
+          deliverable_url: d.deliverable_url || null,
+          invoice_number: d.invoice_number || `INV-2026-${String(d.id).padStart(4, '0')}`
+        }));
+        return { items, total: count ?? items.length, page: filters.page, page_size: 25 };
+      }
+    } catch (err) {
+      console.warn('Admin listOrders Supabase query notice:', err);
+    }
+    return { items: [], total: 0, page: filters.page, page_size: 25 };
+  },
+
+  /**
+   * Verify Student UTR Payment, Attach Deliverable ZIP, and Credit 20% Referral Commission
+   */
+  async verifyOrder(
+    token: string,
+    orderId: number,
+    action: 'APPROVE' | 'REJECT',
+    deliverableUrl?: string
+  ): Promise<{ success: boolean; referralRewarded: boolean; rewardAmount: number }> {
+    const now = new Date().toISOString();
+    let referralRewarded = false;
+    let rewardAmount = 0;
+
+    if (action === 'APPROVE') {
+      const { data: updatedRows, error: updateErr } = await supabase
+        .from('orders')
+        .update({
+          payment_status: 'PAID',
+          status: 'COMPLETED',
+          deliverable_url: deliverableUrl ? deliverableUrl.trim() : null,
+          updated_at: now
+        })
+        .eq('id', orderId)
+        .select();
+
+      if (updateErr) {
+        throw new VerificationApiError(`Failed to approve order: ${updateErr.message}`, 500);
+      }
+
+      // Check if student was referred and credit 20% commission
+      const targetOrder = updatedRows?.[0];
+      if (targetOrder) {
+        const studentIdentifier = targetOrder.student_id || String(targetOrder.user_id);
+        const studentEmail = targetOrder.student_email;
+        const paidAmount = Number(targetOrder.amount) || 0;
+
+        const creditResult = await creditReferralReward(
+          studentIdentifier,
+          studentEmail,
+          orderId,
+          paidAmount
+        );
+        referralRewarded = creditResult.credited;
+        rewardAmount = creditResult.rewardAmount;
+      }
+
+      return { success: true, referralRewarded, rewardAmount };
+    } else {
+      const { error: rejectErr } = await supabase
+        .from('orders')
+        .update({
+          payment_status: 'REJECTED',
+          status: 'CANCELLED',
+          updated_at: now
+        })
+        .eq('id', orderId);
+
+      if (rejectErr) {
+        throw new VerificationApiError(`Failed to reject order: ${rejectErr.message}`, 500);
+      }
+
+      return { success: true, referralRewarded: false, rewardAmount: 0 };
     }
   },
 
+  /**
+   * List meeting requests for Admin
+   */
   async listMeetings(
     token: string,
     filters: { search: string; status: string; page: number }
   ): Promise<CommercePage<MeetingRecordDTO>> {
     try {
-      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
-      if (filters.search) query.set('search', filters.search);
-      if (filters.status) query.set('meeting_status', filters.status);
-      const result: unknown = await authorized(`/admin/management/meetings?${query}`, token);
-      if (!isPage(result, isMeeting)) throw new VerificationApiError('Admin meeting response is invalid.', 502);
-      return result;
-    } catch {
-      // Supabase fallback
-      try {
-        let sbQuery = supabase.from('meetings').select('*', { count: 'exact' });
-        if (filters.status) sbQuery = sbQuery.eq('status', filters.status);
-        if (filters.search) sbQuery = sbQuery.or(`student_name.ilike.%${filters.search}%,project_title.ilike.%${filters.search}%`);
-        const { data, count, error } = await sbQuery.order('id', { ascending: false });
-        if (!error && data && data.length > 0) {
-          const items: MeetingRecordDTO[] = data.map((d: any) => ({
-            id: Number(d.id),
-            student_id: Number(d.student_id),
-            student_name: d.student_name || null,
-            project_id: Number(d.project_id),
-            project_title: d.project_title,
-            guide_id: Number(d.guide_id),
-            start_time: d.start_time,
-            end_time: d.end_time,
-            timezone: d.timezone || 'Asia/Kolkata',
-            status: d.status,
-            google_meet_url: d.google_meet_url || null,
-            payment_status: d.payment_status || null,
-            reviewed_at: d.reviewed_at || null,
-            created_at: d.created_at || new Date().toISOString(),
-            updated_at: d.updated_at || undefined
-          }));
-          return { items, total: count || items.length, page: filters.page, page_size: 25 };
-        }
-      } catch {
-        /* proceed to empty */
+      let sbQuery = supabase.from('meetings').select('*', { count: 'exact' });
+      if (filters.status) sbQuery = sbQuery.eq('status', filters.status);
+      if (filters.search) {
+        sbQuery = sbQuery.or(
+          `student_name.ilike.%${filters.search}%,project_title.ilike.%${filters.search}%,student_email.ilike.%${filters.search}%`
+        );
       }
-      return { items: [], total: 0, page: filters.page, page_size: 25 };
+      const from = (filters.page - 1) * 25;
+      const to = from + 24;
+      const { data, count, error } = await sbQuery.order('id', { ascending: false }).range(from, to);
+
+      if (!error && Array.isArray(data)) {
+        const items: MeetingRecordDTO[] = data.map((d: any) => ({
+          id: Number(d.id),
+          student_id: d.student_id,
+          student_name: d.student_name || null,
+          student_email: d.student_email || null,
+          project_id: Number(d.project_id),
+          project_title: d.project_title,
+          guide_id: Number(d.guide_id || 1),
+          start_time: d.start_time,
+          end_time: d.end_time,
+          timezone: d.timezone || 'Asia/Kolkata',
+          status: d.status,
+          google_meet_url: d.google_meet_url || null,
+          payment_status: d.payment_status || null,
+          reviewed_at: d.reviewed_at || null,
+          requested_date: d.requested_date || null,
+          time_slot: d.time_slot || null,
+          created_at: d.created_at || new Date().toISOString(),
+          updated_at: d.updated_at || undefined
+        }));
+        return { items, total: count ?? items.length, page: filters.page, page_size: 25 };
+      }
+    } catch (err) {
+      console.warn('Admin listMeetings Supabase notice:', err);
     }
+    return { items: [], total: 0, page: filters.page, page_size: 25 };
   },
 
-  async approveMeeting(token: string, meetingId: number, url: string): Promise<void> {
-    try {
-      await authorized(`/admin/meetings/${meetingId}`, token, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'SCHEDULED', google_meet_url: url })
-      });
-    } catch {
-      // Supabase update
-      try {
-        await supabase.from('meetings').update({
-          status: 'SCHEDULED',
-          google_meet_url: url,
-          updated_at: new Date().toISOString()
-        }).eq('id', meetingId);
-      } catch {
-        /* ignore */
-      }
+  /**
+   * Approve meeting, attach Google Meet link and optionally update scheduled date/time
+   */
+  async approveMeeting(
+    token: string,
+    meetingId: number,
+    url: string,
+    scheduleUpdates?: { start_time?: string; end_time?: string; requested_date?: string; time_slot?: string }
+  ): Promise<void> {
+    const updatePayload: Record<string, any> = {
+      status: 'SCHEDULED',
+      google_meet_url: url,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    if (scheduleUpdates?.start_time) updatePayload.start_time = scheduleUpdates.start_time;
+    if (scheduleUpdates?.end_time) updatePayload.end_time = scheduleUpdates.end_time;
+    if (scheduleUpdates?.requested_date) updatePayload.requested_date = scheduleUpdates.requested_date;
+    if (scheduleUpdates?.time_slot) updatePayload.time_slot = scheduleUpdates.time_slot;
+
+    const { error: sbErr } = await supabase
+      .from('meetings')
+      .update(updatePayload)
+      .eq('id', meetingId);
+
+    if (sbErr) {
+      throw new VerificationApiError(`Failed to approve meeting in database: ${sbErr.message}`, 500);
     }
   }
 };
 
 export const StudentCommerceAPI = {
+  /**
+   * List Student's orders directly from Supabase
+   */
+  async listOrders(token?: string, studentIdentifier?: string): Promise<StudentOrderRecord[]> {
+    try {
+      let sbQuery = supabase.from('orders').select('*');
+      if (studentIdentifier) {
+        const clean = studentIdentifier.trim();
+        sbQuery = sbQuery.or(`student_id.eq.${clean},student_email.ilike.${clean},user_id.eq.${clean}`);
+      }
+      const { data, error } = await sbQuery.order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        return data.map((d: any) => ({
+          id: Number(d.id),
+          user_id: d.user_id,
+          student_id: d.student_id,
+          student_name: d.student_name,
+          student_email: d.student_email,
+          project_id: Number(d.project_id),
+          status: d.status || 'PENDING',
+          amount: Number(d.amount) || 0,
+          currency: d.currency || 'INR',
+          created_at: d.created_at || new Date().toISOString(),
+          updated_at: d.updated_at || new Date().toISOString(),
+          project_title: d.project_title,
+          payment_status: d.payment_status || 'AWAITING_VERIFICATION',
+          utr_number: d.utr_number || null,
+          payment_screenshot_url: d.payment_screenshot_url || null,
+          deliverable_url: d.deliverable_url || null,
+          invoice_number: d.invoice_number || `INV-2026-${String(d.id).padStart(4, '0')}`
+        }));
+      }
+    } catch (err) {
+      console.warn('Student listOrders Supabase notice:', err);
+    }
+    return [];
+  },
+
+  /**
+   * Submit new Order with 12-digit UTR and payment screenshot directly to Supabase
+   */
+  async submitOrderPayment(orderPayload: {
+    user_id: string | number;
+    student_id: string;
+    student_name: string;
+    student_email: string;
+    project_id: number;
+    project_title: string;
+    amount: number;
+    utr_number: string;
+    payment_screenshot_url: string;
+    invoice_number: string;
+  }): Promise<StudentOrderRecord> {
+    const record = {
+      user_id: orderPayload.user_id,
+      student_id: orderPayload.student_id,
+      student_name: orderPayload.student_name,
+      student_email: orderPayload.student_email,
+      project_id: orderPayload.project_id,
+      project_title: orderPayload.project_title,
+      amount: orderPayload.amount,
+      currency: 'INR',
+      payment_status: 'AWAITING_VERIFICATION',
+      status: 'PENDING',
+      utr_number: orderPayload.utr_number,
+      payment_screenshot_url: orderPayload.payment_screenshot_url,
+      deliverable_url: null,
+      invoice_number: orderPayload.invoice_number,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('orders')
+      .insert([record])
+      .select()
+      .single();
+
+    if (error) {
+      throw new VerificationApiError(`Failed to submit order to database: ${error.message}`, 500);
+    }
+
+    return {
+      id: Number(data.id),
+      user_id: data.user_id,
+      student_id: data.student_id,
+      student_name: data.student_name,
+      student_email: data.student_email,
+      project_id: Number(data.project_id),
+      status: data.status,
+      amount: Number(data.amount),
+      currency: data.currency,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+      project_title: data.project_title,
+      payment_status: data.payment_status,
+      utr_number: data.utr_number,
+      payment_screenshot_url: data.payment_screenshot_url,
+      deliverable_url: data.deliverable_url,
+      invoice_number: data.invoice_number
+    };
+  },
+
+  /**
+   * List Student's meetings directly from Supabase
+   */
+  async listMeetings(token?: string, studentIdentifier?: string): Promise<MeetingRecordDTO[]> {
+    try {
+      let sbQuery = supabase.from('meetings').select('*');
+      if (studentIdentifier) {
+        const clean = studentIdentifier.trim();
+        sbQuery = sbQuery.or(`student_id.eq.${clean},student_email.ilike.${clean}`);
+      }
+      const { data, error } = await sbQuery.order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        return data.map((d: any) => ({
+          id: Number(d.id),
+          student_id: d.student_id,
+          student_name: d.student_name || null,
+          student_email: d.student_email || null,
+          project_id: Number(d.project_id),
+          project_title: d.project_title,
+          guide_id: Number(d.guide_id || 1),
+          start_time: d.start_time,
+          end_time: d.end_time,
+          timezone: d.timezone || 'Asia/Kolkata',
+          status: d.status,
+          google_meet_url: d.google_meet_url || null,
+          payment_status: d.payment_status || null,
+          reviewed_at: d.reviewed_at || null,
+          requested_date: d.requested_date || null,
+          time_slot: d.time_slot || null,
+          created_at: d.created_at || new Date().toISOString(),
+          updated_at: d.updated_at || undefined
+        }));
+      }
+    } catch (err) {
+      console.warn('Student listMeetings Supabase notice:', err);
+    }
+    return [];
+  },
+
+  /**
+   * Request a 5-minute meeting directly in Supabase (Max 3 active meetings rule)
+   */
+  async createMeeting(meetingPayload: {
+    student_id: string | number;
+    student_name: string;
+    student_email: string;
+    project_id: number;
+    project_title: string;
+    start_time: string;
+    end_time: string;
+    timezone?: string;
+    requested_date?: string;
+    time_slot?: string;
+  }): Promise<MeetingRecordDTO> {
+    // 1. Enforce max 3 active meetings
+    const cleanId = String(meetingPayload.student_id);
+    const cleanEmail = meetingPayload.student_email || '';
+    const { data: activeMeetings } = await supabase
+      .from('meetings')
+      .select('id, status')
+      .or(`student_id.eq.${cleanId}${cleanEmail ? `,student_email.ilike.${cleanEmail}` : ''}`)
+      .not('status', 'in', '("CANCELLED","REJECTED")');
+
+    if (activeMeetings && activeMeetings.length >= 3) {
+      throw new VerificationApiError('Maximum limit reached: You can have at most 3 guidance meetings.', 400);
+    }
+
+    const record = {
+      student_id: meetingPayload.student_id,
+      student_name: meetingPayload.student_name,
+      student_email: meetingPayload.student_email,
+      project_id: meetingPayload.project_id,
+      project_title: meetingPayload.project_title,
+      guide_id: 1,
+      start_time: meetingPayload.start_time,
+      end_time: meetingPayload.end_time,
+      timezone: meetingPayload.timezone || 'Asia/Kolkata',
+      requested_date: meetingPayload.requested_date || null,
+      time_slot: meetingPayload.time_slot || null,
+      status: 'PENDING',
+      google_meet_url: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from('meetings')
+      .insert([record])
+      .select()
+      .single();
+
+    if (error) {
+      throw new VerificationApiError(`Failed to request meeting in database: ${error.message}`, 500);
+    }
+
+    return {
+      id: Number(data.id),
+      student_id: data.student_id,
+      student_name: data.student_name,
+      student_email: data.student_email,
+      project_id: Number(data.project_id),
+      project_title: data.project_title,
+      guide_id: Number(data.guide_id),
+      start_time: data.start_time,
+      end_time: data.end_time,
+      timezone: data.timezone,
+      status: data.status,
+      google_meet_url: data.google_meet_url,
+      payment_status: data.payment_status,
+      reviewed_at: data.reviewed_at,
+      requested_date: data.requested_date,
+      time_slot: data.time_slot,
+      created_at: data.created_at,
+      updated_at: data.updated_at
+    };
+  },
+
+  /**
+   * Project Selections for Guidance
+   */
+  async listSelections(token?: string, studentId?: string): Promise<SelectionRecord[]> {
+    try {
+      const raw = localStorage.getItem(`cpm_selections_${studentId || 'default'}`);
+      if (raw) return JSON.parse(raw);
+    } catch { /* ignore */ }
+    return [];
+  },
+
+  async addSelection(token: string, projectId: number, studentId?: string): Promise<void> {
+    try {
+      const key = `cpm_selections_${studentId || 'default'}`;
+      const existing = await this.listSelections(token, studentId);
+      if (!existing.some((s) => s.project_id === projectId)) {
+        existing.push({
+          id: Date.now(),
+          project_id: projectId,
+          selected_at: new Date().toISOString(),
+          is_active: true
+        });
+        localStorage.setItem(key, JSON.stringify(existing));
+      }
+    } catch { /* ignore */ }
+  },
+
+  async removeSelection(token: string, projectId: number, studentId?: string): Promise<void> {
+    try {
+      const key = `cpm_selections_${studentId || 'default'}`;
+      const existing = await this.listSelections(token, studentId);
+      const remaining = existing.filter((s) => s.project_id !== projectId);
+      localStorage.setItem(key, JSON.stringify(remaining));
+    } catch { /* ignore */ }
+  },
+
   async listNotifications(token: string): Promise<CommerceNotification[]> {
-    const result: unknown = await authorized('/notifications/me', token);
-    if (!Array.isArray(result) || !result.every(isCommerceNotification)) {
-      throw new VerificationApiError('Student notification response is invalid.', 502);
-    }
-    return result;
-  },
-
-  async listOrders(token: string): Promise<StudentOrderRecord[]> {
-    const result: unknown = await authorized('/orders', token);
-    if (!Array.isArray(result) || !result.every(isStudentOrder)) {
-      throw new VerificationApiError('Student order response is invalid.', 502);
-    }
-    return result;
-  },
-
-  async listMeetings(token: string): Promise<MeetingRecordDTO[]> {
-    const result: unknown = await authorized('/meetings', token);
-    if (!Array.isArray(result) || !result.every(isMeeting)) {
-      throw new VerificationApiError('Student meeting response is invalid.', 502);
-    }
-    return result;
-  },
-
-  async listSelections(token: string): Promise<SelectionRecord[]> {
-    const result: unknown = await authorized('/selections', token);
-    if (!Array.isArray(result) || !result.every(isSelection)) {
-      throw new VerificationApiError('Student selection response is invalid.', 502);
-    }
-    return result.filter((item) => item.is_active);
-  },
-
-  async addSelection(token: string, projectId: number): Promise<void> {
-    await authorized(`/selections/${projectId}`, token, { method: 'POST' });
-  },
-
-  async removeSelection(token: string, projectId: number): Promise<void> {
-    await authorized(`/selections/${projectId}`, token, { method: 'DELETE' });
-  },
-
-  async createOrder(token: string, projectId: number): Promise<StudentOrderRecord> {
-    const result: unknown = await authorized('/orders', token, {
-      method: 'POST',
-      body: JSON.stringify({ project_id: projectId })
-    });
-    if (!isStudentOrder(result)) throw new VerificationApiError('Order response is invalid.', 502);
-    return result;
-  },
-
-  async createMeeting(
-    token: string,
-    meeting: { project_id: number; guide_id: number; start_time: string; end_time: string; timezone: string }
-  ): Promise<MeetingRecordDTO> {
-    const result: unknown = await authorized('/meetings', token, {
-      method: 'POST',
-      body: JSON.stringify(meeting)
-    });
-    if (!isMeeting(result)) throw new VerificationApiError('Meeting response is invalid.', 502);
-    return result;
+    return [];
   },
 
   async getAvailableGuide(): Promise<number | null> {
-    const result: unknown = await parseResponse(await fetch(`${commerceApiBaseUrl}/meetings/available-slots`));
-    if (typeof result !== 'object' || result === null || !('slots' in result) || !Array.isArray(result.slots)) {
-      throw new VerificationApiError('Meeting availability response is invalid.', 502);
-    }
-    if (result.slots.length === 0) return null;
-    const first = result.slots[0];
-    if (typeof first !== 'object' || first === null || !('guide_id' in first) || typeof first.guide_id !== 'number') {
-      throw new VerificationApiError('Meeting availability response is invalid.', 502);
-    }
-    return first.guide_id;
+    return 1;
   }
 };

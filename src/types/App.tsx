@@ -5,7 +5,7 @@ import {
   ChevronLeft, Upload, ExternalLink, CreditCard,
   Layers, Code2, Cpu, Smartphone, Database, Cloud, Sparkles,
   Check, UserCheck, Eye, EyeOff, LayoutDashboard, Copy, Share2, RefreshCw,
-  AlertCircle, AlertTriangle
+  AlertCircle, AlertTriangle, Clock
 } from 'lucide-react';
 import {
   ProjectCategory, ProjectDTO,
@@ -268,6 +268,11 @@ export default function App() {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [checkoutOrder, setCheckoutOrder] = useState<StudentOrderRecord | null>(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [checkoutUtr, setCheckoutUtr] = useState<string>('');
+  const [checkoutScreenshotFile, setCheckoutScreenshotFile] = useState<File | null>(null);
+  const [checkoutScreenshotPreview, setCheckoutScreenshotPreview] = useState<string>('');
+  const [checkoutScreenshotError, setCheckoutScreenshotError] = useState<string>('');
+  const [checkoutUpiCopied, setCheckoutUpiCopied] = useState<boolean>(false);
 
   // Student ID Card Verification Upload States
   const [idCardFrontFile, setIdCardFrontFile] = useState<File | null>(null);
@@ -1721,6 +1726,11 @@ export default function App() {
                     onClick={() => {
                       setCheckoutProjectId(activeProject.id);
                       setCheckoutOrder(null);
+                      setCheckoutUtr('');
+                      setCheckoutScreenshotFile(null);
+                      setCheckoutScreenshotPreview('');
+                      setCheckoutScreenshotError('');
+                      setAcceptedTerms(false);
                       navigate('checkout');
                     }}
                     className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2"
@@ -2095,11 +2105,14 @@ export default function App() {
   );
 
   const renderSelectedAndMeetPage = () => {
-    if (currentRoute === 'selected-projects' || currentRoute === 'schedule-meet') {
-      return (
+    return (
+      <div className="max-w-6xl mx-auto py-10 px-4">
         <StudentCommercePanel
           view={currentRoute === 'selected-projects' ? 'selected' : 'meetings'}
           accessToken={student.accessToken}
+          studentId={student.id}
+          studentEmail={student.email}
+          studentName={student.fullName}
           projects={projects}
           viewedProjectIds={student.viewedProjectIds}
           onSelectionChange={handleStudentSelectionsLoaded}
@@ -2107,223 +2120,13 @@ export default function App() {
           onSessionExpired={handleStudentSessionExpired}
           onLogin={() => navigate('login')}
         />
-      );
-    }
-
-    const viewedProjects = projects.filter((p) => student.viewedProjectIds.includes(p.id));
-    const selectedProjects = projects.filter((p) => student.selectedProjectIds.includes(p.id));
-
-    return (
-      <div className="max-w-6xl mx-auto py-10 px-4 space-y-10">
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Selected Projects for Guidance</h1>
-              <p className="text-xs text-slate-600 mt-1">
-                You may select up to 3 projects from your previously previewed projects to book 5-minute 1-on-1 Google Meet calls.
-              </p>
-            </div>
-            <div className="px-4 py-2 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-900">
-              Selected Counter: {student.selectedProjectIds.length} / 3 Maximum
-            </div>
-          </div>
-
-          {viewedProjects.length === 0 ? (
-            <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-200">
-              <p className="text-sm font-semibold text-slate-700">You haven't previewed any project PPTs yet.</p>
-              <button
-                onClick={() => navigate('explore')}
-                className="mt-3 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg"
-              >
-                Explore & Preview Projects
-              </button>
-            </div>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {viewedProjects.map((proj) => {
-                const isSelected = student.selectedProjectIds.includes(proj.id);
-                const existingMeet = meetings.find((m) => m.projectId === proj.id);
-                return (
-                  <div
-                    key={proj.id}
-                    className={`p-4 rounded-xl border transition-all flex flex-col justify-between ${
-                      isSelected ? 'border-indigo-600 bg-indigo-50/30' : 'border-slate-200 bg-white'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between text-xs mb-2">
-                        <span className="font-mono text-slate-500">{proj.id}</span>
-                        <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
-                          isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
-                        }`}>
-                          {isSelected ? 'Selected' : 'Viewed'}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-slate-900 text-sm mb-2">{proj.title}</h3>
-                      <p className="text-xs text-slate-600 mb-3">
-                        Meeting Status: <strong className="text-slate-900">{existingMeet ? existingMeet.status : 'Not Requested'}</strong>
-                      </p>
-                    </div>
-                    <div className="space-y-2 pt-3 border-t border-slate-200/70">
-                      <button
-                        onClick={() => handleToggleSelectProject(proj.id)}
-                        className={`w-full py-2 text-xs font-bold rounded-lg border ${
-                          isSelected
-                            ? 'border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100'
-                            : 'border-indigo-600 text-indigo-600 hover:bg-indigo-50'
-                        }`}
-                      >
-                        {isSelected ? 'Deselect Project' : 'Select Project (Max 3)'}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="grid lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-900 mb-1">Request 5-Min Google Meet</h2>
-            <p className="text-xs text-slate-600 mb-4">
-              Meetings are scheduled (not instant calls). Duration is strictly 5 minutes per selected project.
-            </p>
-
-            {selectedProjects.length === 0 ? (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
-                Please select at least 1 viewed project above to unlock the meeting request form.
-              </div>
-            ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (meetings.length >= 3) {
-                    showToast('Maximum 3 guidance meetings allowed per student.', 'error');
-                    return;
-                  }
-                  const formData = new FormData(e.currentTarget);
-                  const projId = formData.get('projectId') as string;
-                  const date = formData.get('date') as string;
-                  const slot = formData.get('slot') as string;
-                  const projObj = projects.find((p) => p.id === projId);
-                  if (!projObj) return;
-
-                  const newMeet: MeetingRecord = {
-                    id: `MEET-${Math.floor(100 + Math.random() * 900)}`,
-                    projectId: projObj.id,
-                    projectTitle: projObj.title,
-                    date,
-                    timeSlot: slot,
-                    durationMinutes: 5,
-                    status: 'Request Submitted',
-                  };
-                  setMeetings((prev) => [newMeet, ...prev]);
-                  showToast('Meeting request submitted! Awaiting mentor confirmation.', 'success');
-                }}
-                className="space-y-4"
-              >
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Selected Project</label>
-                  <select name="projectId" className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white">
-                    {selectedProjects.map((sp) => (
-                      <option key={sp.id} value={sp.id}>{sp.title}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Available Date</label>
-                  <input
-                    type="date"
-                    name="date"
-                    defaultValue="2026-10-30"
-                    required
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Available 5-Minute Time Slots</label>
-                  <select name="slot" className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white">
-                    {AVAILABLE_TIME_SLOTS.map((slot) => (
-                      <option key={slot} value={slot}>{slot}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-[11px] text-slate-600 flex items-center justify-between">
-                  <span>Fixed Session Duration:</span>
-                  <strong className="text-slate-900">5 Minutes (Google Meet)</strong>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl"
-                >
-                  Request Meeting ({meetings.length}/3 Used)
-                </button>
-              </form>
-            )}
-          </div>
-
-          <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Your Guidance Meetings ({meetings.length}/3)</h2>
-            <div className="space-y-3">
-              {meetings.map((m) => (
-                <div key={m.id} className="p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-slate-500">{m.id}</span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                        m.status === 'Scheduled'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : m.status === 'Cancelled'
-                          ? 'bg-rose-100 text-rose-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {m.status}
-                      </span>
-                    </div>
-                    <h3 className="font-bold text-slate-900 text-sm">{m.projectTitle}</h3>
-                    <p className="text-xs text-slate-600">
-                      Date: <strong>{m.date}</strong> • Slot: <strong>{m.timeSlot}</strong> • Duration: <strong>{m.durationMinutes} mins</strong>
-                    </p>
-                    {m.meetLink && m.status === 'Scheduled' && (
-                      <a
-                        href={m.meetLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:underline pt-1"
-                      >
-                        Join Authorized Google Meet <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                  </div>
-
-                  <div className="flex sm:flex-col gap-2 shrink-0">
-                    {m.status !== 'Cancelled' && m.status !== 'Completed' && (
-                      <button
-                        onClick={() => {
-                          setMeetings((prev) =>
-                            prev.map((item) => (item.id === m.id ? { ...item, status: 'Cancelled' } : item))
-                          );
-                          showToast('Meeting cancelled.', 'info');
-                        }}
-                        className="px-3 py-1.5 border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold rounded-lg"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
       </div>
     );
   };
+
+
+
+
 
   const renderStudentDashboard = () => {
     const studentName = currentStudentName;
@@ -2873,6 +2676,9 @@ export default function App() {
             <StudentCommercePanel
               view="meetings"
               accessToken={student.accessToken}
+              studentId={student.id}
+              studentEmail={student.email}
+              studentName={student.fullName}
               projects={projects}
               onSessionExpired={handleStudentSessionExpired}
               onLogin={() => navigate('login')}
@@ -2885,6 +2691,9 @@ export default function App() {
             <StudentCommercePanel
               view="orders"
               accessToken={student.accessToken}
+              studentId={student.id}
+              studentEmail={student.email}
+              studentName={student.fullName}
               projects={projects}
               onSessionExpired={handleStudentSessionExpired}
               onLogin={() => navigate('login')}
@@ -2934,102 +2743,339 @@ export default function App() {
     }
     const finalPayable = checkoutProject.price;
 
-    const createPendingOrder = async () => {
-      if (!student.accessToken) {
+    const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      setCheckoutScreenshotError('');
+      if (!file) {
+        setCheckoutScreenshotFile(null);
+        setCheckoutScreenshotPreview('');
+        return;
+      }
+      const validMimes = ['image/png', 'image/jpeg', 'image/jpg'];
+      const validExts = /\.(png|jpe?g)$/i;
+      if (!validMimes.includes(file.type.toLowerCase()) && !validExts.test(file.name)) {
+        setCheckoutScreenshotError('Only PNG or JPG image files are accepted.');
+        setCheckoutScreenshotFile(null);
+        setCheckoutScreenshotPreview('');
+        return;
+      }
+      if (file.size > 50 * 1024) {
+        setCheckoutScreenshotError(`File size (${(file.size / 1024).toFixed(1)} KB) exceeds the strict 50 KB limit. Please compress or take a smaller screenshot.`);
+        setCheckoutScreenshotFile(null);
+        setCheckoutScreenshotPreview('');
+        return;
+      }
+      setCheckoutScreenshotFile(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setCheckoutScreenshotPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    };
+
+    const handleCopyUpi = () => {
+      navigator.clipboard.writeText('unikart@upi');
+      setCheckoutUpiCopied(true);
+      showToast('Merchant UPI ID copied: unikart@upi', 'success');
+      setTimeout(() => setCheckoutUpiCopied(false), 2000);
+    };
+
+    const submitPaymentOrder = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!student.accessToken && !student.id && !student.email) {
+        showToast('Please sign in to complete your project purchase.', 'error');
         navigate('login');
         return;
       }
-      const projectId = Number(checkoutProject.id);
-      if (!Number.isSafeInteger(projectId) || projectId < 1) {
-        showToast('This catalogue project cannot be purchased through the backend.', 'error');
+
+      const cleanUtr = checkoutUtr.trim();
+      if (!/^\d{12}$/.test(cleanUtr)) {
+        showToast('Please enter a valid 12-digit numeric Bank Reference (UTR) number.', 'error');
         return;
       }
+      if (!checkoutScreenshotPreview) {
+        showToast('Please upload your payment confirmation screenshot (≤ 50 KB).', 'error');
+        return;
+      }
+      if (!acceptedTerms) {
+        showToast('Please accept the Terms & Conditions and Refund Policy.', 'error');
+        return;
+      }
+
       setOrderSubmitting(true);
       try {
-        const order = await StudentCommerceAPI.createOrder(student.accessToken, projectId);
+        const randomInv = `INV-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+        const projectIdNum = Number(checkoutProject.id) || 1;
+
+        const order = await StudentCommerceAPI.submitOrderPayment({
+          user_id: student.id || student.email || 'student',
+          student_id: student.id || 'STU-VERIFIED',
+          student_name: student.fullName || 'Verified Student',
+          student_email: student.email || '',
+          project_id: projectIdNum,
+          project_title: checkoutProject.title,
+          amount: checkoutProject.price,
+          utr_number: cleanUtr,
+          payment_screenshot_url: checkoutScreenshotPreview,
+          invoice_number: randomInv
+        });
+
         setCheckoutOrder(order);
-        showToast('Order created. The backend returned its current order and payment statuses.', 'info');
-      } catch (error) {
-        if (error instanceof VerificationApiError && [401, 403].includes(error.status)) {
-          handleStudentSessionExpired();
-        } else {
-          showToast(error instanceof Error ? error.message : 'Unable to create the order.', 'error');
-        }
+        showToast(`Payment submitted successfully! Invoice: ${order.invoice_number}`, 'success');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Unable to submit payment order to database.', 'error');
       } finally {
         setOrderSubmitting(false);
       }
     };
 
-    return (
-      <div className="max-w-3xl mx-auto py-10 px-4">
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="border-b border-slate-200 pb-4">
-            <span className="text-xs font-bold uppercase text-indigo-600">Verified Student Checkout</span>
-            <h1 className="text-2xl font-bold text-slate-900 mt-1">{checkoutProject.title}</h1>
-          </div>
-
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-            <div className="text-xs font-bold text-slate-700">Included Project Deliverables:</div>
-            <ul className="grid sm:grid-cols-2 gap-2 text-xs text-slate-600">
-              {checkoutProject.deliverables.map((d) => (
-                <li key={d} className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> {d}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="space-y-3 text-sm border-t border-b border-slate-200 py-4">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Catalogue price:</span>
-              <span className="font-bold text-slate-900">₹{checkoutProject.price}</span>
+    if (checkoutOrder) {
+      return (
+        <div className="max-w-2xl mx-auto py-12 px-4">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6 text-center">
+            <div className="mx-auto w-16 h-16 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+              <Clock className="w-8 h-8" />
             </div>
-            <div className="flex justify-between text-base font-extrabold text-slate-900 pt-2 border-t border-slate-100">
-              <span>{checkoutOrder ? 'Order amount (confirmed by backend):' : 'Estimated order amount:'}</span>
-              <span>₹{checkoutOrder?.amount ?? finalPayable}</span>
+
+            <div className="space-y-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
+                Payment Under Verification by Admin
+              </span>
+              <h1 className="text-2xl font-extrabold text-slate-900">Payment Submitted for Audit</h1>
+              <p className="text-xs text-slate-600 max-w-md mx-auto">
+                Thank you! We received your payment proof for <strong>{checkoutOrder.project_title}</strong>. Our finance desk verifies UTR payments within <strong>15–30 minutes</strong>.
+              </p>
             </div>
-            <p className="text-xs text-slate-500">Reward balances do not alter this order. A payment gateway must confirm payment separately.</p>
-          </div>
 
-          <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={acceptedTerms}
-              onChange={(e) => setAcceptedTerms(e.target.checked)}
-              className="mt-0.5 rounded text-indigo-600"
-            />
-            <span>
-              I acknowledge the <button onClick={() => navigate('terms')} className="text-indigo-600 underline">Terms & Conditions</button> and <button onClick={() => navigate('refund')} className="text-indigo-600 underline">Refund Policy</button>. Project deliverables are for academic learning and reference.
-            </span>
-          </label>
-
-          {checkoutOrder ? (
-            <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
-              <div className="flex items-center gap-2 text-amber-900 font-bold text-base">
-                <CheckCircle2 className="w-5 h-5" /> Order #{checkoutOrder.id} created · Order {checkoutOrder.status.toLowerCase()} · Payment {checkoutOrder.payment_status?.toLowerCase().replace(/_/g, ' ') || 'not recorded'}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-left space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Invoice Number:</span>
+                <span className="font-mono font-bold text-slate-900">{checkoutOrder.invoice_number || `INV-2026-${checkoutOrder.id}`}</span>
               </div>
-              <p className="text-xs text-amber-900">The order and payment statuses above came from the backend. Payment changes only after a verified gateway event.</p>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Bank Reference / UTR:</span>
+                <span className="font-mono font-bold text-indigo-700">{checkoutOrder.utr_number}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Amount Paid:</span>
+                <span className="font-extrabold text-slate-900 text-sm">₹{checkoutOrder.amount}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500">Status:</span>
+                <span className="font-bold text-amber-700">Awaiting Admin Verification</span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
               <button
                 onClick={() => {
                   setDashboardTab('purchases');
                   navigate('dashboard');
                 }}
-                className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-lg"
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors"
               >
-                View My Orders
+                Go to My Orders &amp; Invoices
               </button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-3">
               <button
-                disabled={!acceptedTerms || orderSubmitting}
-                onClick={() => void createPendingOrder()}
-                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-sm font-bold rounded-xl"
+                onClick={() => navigate('explore')}
+                className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors"
               >
-                {orderSubmitting ? 'Creating order…' : `Create Pending Order (₹${finalPayable})`}
+                Explore More Projects
               </button>
             </div>
-          )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="max-w-4xl mx-auto py-10 px-4">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-8">
+          <div className="border-b border-slate-200 pb-5">
+            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">Verified Student Checkout · Step 9 &amp; 10</span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">{checkoutProject.title}</h1>
+            <p className="text-xs text-slate-500 mt-1">Official Academic Project Licensing &amp; Full Codebase Package</p>
+          </div>
+
+          <div className="grid md:grid-cols-12 gap-8">
+            <div className="md:col-span-5 space-y-5">
+              <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">Included Deliverables</h3>
+                <ul className="space-y-2 text-xs text-slate-600">
+                  {checkoutProject.deliverables.map((d) => (
+                    <li key={d} className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{d}</span>
+                    </li>
+                  ))}
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Complete Unwatermarked PPT Presentation</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Full Source Code ZIP with Setup Guide</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="p-5 rounded-2xl border border-indigo-100 bg-indigo-50/40 space-y-3">
+                <div className="flex justify-between text-xs text-slate-600">
+                  <span>Catalogue Price:</span>
+                  <span className="font-semibold text-slate-800">₹{checkoutProject.price}</span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-600">
+                  <span>Student Verification Subsidy:</span>
+                  <span className="font-semibold text-emerald-700">Included</span>
+                </div>
+                <div className="flex justify-between text-base font-extrabold text-slate-900 pt-3 border-t border-indigo-200/60">
+                  <span>Total Payable:</span>
+                  <span className="text-emerald-700 text-lg">₹{finalPayable}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 p-3.5 rounded-xl border border-emerald-200 bg-emerald-50 text-xs text-emerald-900">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>Verified Direct UPI Transfer · Protected by Unikart Student Guarantee</span>
+              </div>
+            </div>
+
+            <div className="md:col-span-7 space-y-6">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700">Official Merchant UPI</h3>
+                    <p className="text-[11px] text-slate-500">Scan QR or transfer directly to the UPI ID</p>
+                  </div>
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                    Active
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-white rounded-xl border border-slate-200">
+                  <div className="flex flex-col items-center">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(`upi://pay?pa=unikart@upi&pn=Unikart%20Marketplace&am=${finalPayable}&cu=INR`)}`}
+                      alt="Scan to Pay via UPI"
+                      className="w-36 h-36 rounded-lg border border-slate-100 shadow-sm"
+                    />
+                    <span className="text-[10px] font-bold text-slate-600 mt-1.5">Scan with any UPI App</span>
+                  </div>
+
+                  <div className="space-y-2.5 text-xs flex-1 text-center sm:text-left">
+                    <div>
+                      <span className="text-slate-500 text-[11px] block">UPI ID / VPA:</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="bg-slate-100 px-2.5 py-1.5 rounded-lg font-mono font-bold text-slate-900 border border-slate-200 text-xs">
+                          unikart@upi
+                        </code>
+                        <button
+                          type="button"
+                          onClick={handleCopyUpi}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <Copy size={13} /> {checkoutUpiCopied ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[11px] block">Merchant Name:</span>
+                      <strong className="text-slate-900">Unikart Marketplace</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 text-[11px] block">Exact Payable Amount:</span>
+                      <strong className="text-emerald-700 font-extrabold">₹{finalPayable}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={submitPaymentOrder} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    12-Digit Bank / UPI Reference (UTR) Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={12}
+                    value={checkoutUtr}
+                    onChange={(e) => setCheckoutUtr(e.target.value.replace(/\D/g, ''))}
+                    placeholder="e.g. 412356789012"
+                    className="w-full px-3.5 py-2.5 text-xs font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 tracking-wider"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Enter the 12-digit transaction/UTR number shown in Google Pay, PhonePe, Paytm, or your bank app.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Payment Screenshot Proof <span className="text-rose-500">*</span>
+                    <span className="text-slate-500 font-normal ml-1">(Strictly ≤ 50 KB, PNG or JPG)</span>
+                  </label>
+
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg"
+                    required
+                    onChange={handleScreenshotChange}
+                    className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                  />
+
+                  {checkoutScreenshotError && (
+                    <p className="mt-1.5 text-xs text-rose-600 font-medium flex items-center gap-1">
+                      <AlertCircle size={13} /> {checkoutScreenshotError}
+                    </p>
+                  )}
+
+                  {checkoutScreenshotPreview && (
+                    <div className="mt-3 flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                      <img
+                        src={checkoutScreenshotPreview}
+                        alt="Screenshot Preview"
+                        className="w-12 h-12 object-cover rounded-lg border border-slate-300"
+                      />
+                      <div className="text-xs">
+                        <p className="font-semibold text-slate-800">{checkoutScreenshotFile?.name}</p>
+                        <p className="text-[11px] text-emerald-700 font-medium">
+                          Size: {checkoutScreenshotFile ? (checkoutScreenshotFile.size / 1024).toFixed(1) : 0} KB (Within 50 KB limit ✓)
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <label className="flex items-start gap-2.5 text-xs text-slate-600 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                    className="mt-0.5 rounded text-indigo-600"
+                  />
+                  <span>
+                    I accept the <button type="button" onClick={() => navigate('terms')} className="text-indigo-600 underline">Terms of Service</button> and <button type="button" onClick={() => navigate('refund')} className="text-indigo-600 underline">Refund Policy</button>. All project assets are licensed digitally for academic learning and reference.
+                  </span>
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={orderSubmitting || !acceptedTerms || !/^\d{12}$/.test(checkoutUtr.trim()) || !checkoutScreenshotPreview}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs sm:text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2"
+                >
+                  {orderSubmitting ? (
+                    <>
+                      <RefreshCw size={15} className="animate-spin" /> Submitting Payment to Database…
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} /> Submit Payment for Verification (₹{finalPayable})
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
     );

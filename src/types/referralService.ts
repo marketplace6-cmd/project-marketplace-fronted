@@ -479,3 +479,46 @@ export const AdminPayoutAPI = {
     }
   }
 };
+
+/**
+ * Automatically calculate and credit 20% referral reward upon verified order approval
+ */
+export async function creditReferralReward(
+  referredStudentId: string,
+  referredStudentEmail: string | null | undefined,
+  orderId: number,
+  orderAmount: number
+): Promise<{ credited: boolean; rewardAmount: number; referrerId?: string }> {
+  try {
+    const reward = Math.round(orderAmount * 0.20); // 20% referral reward
+    const orFilters: string[] = [];
+    if (referredStudentId) orFilters.push(`referred_student_id.eq.${referredStudentId}`);
+    if (referredStudentEmail) orFilters.push(`referral_code.ilike.%${referredStudentEmail}%`);
+
+    if (orFilters.length === 0) return { credited: false, rewardAmount: 0 };
+
+    const { data: rows } = await supabase
+      .from('referrals')
+      .select('*')
+      .or(orFilters.join(','))
+      .limit(1);
+
+    if (rows && rows.length > 0) {
+      const ref = rows[0];
+      await supabase
+        .from('referrals')
+        .update({
+          order_id: orderId,
+          reward_amount: reward,
+          reward_status: 'ELIGIBLE',
+          status: 'ACTIVE'
+        })
+        .eq('id', ref.id);
+
+      return { credited: true, rewardAmount: reward, referrerId: ref.referrer_student_id };
+    }
+  } catch (err) {
+    console.warn('creditReferralReward warning:', err);
+  }
+  return { credited: false, rewardAmount: 0 };
+}

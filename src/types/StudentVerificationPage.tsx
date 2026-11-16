@@ -1,4 +1,4 @@
-﻿import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock3, RefreshCw, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
 import {
   StudentVerificationAPI,

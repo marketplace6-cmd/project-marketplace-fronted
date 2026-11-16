@@ -1,4 +1,4 @@
-﻿import { supabase } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 
 export type CatalogueStatus = 'DRAFT' | 'PUBLISHED' | 'SOLD_OUT';
 
@@ -54,7 +54,7 @@ export class AdminCatalogError extends Error {
   }
 }
 
-const configuredBaseUrl = (import.meta.env.VITE_ADMIN_API_BASE_URL || 'http://localhost:8000/api/v1')
+const configuredBaseUrl = (import.meta.env.VITE_ADMIN_API_BASE_URL || '')
   .replace(/\/+$/, '');
 const API_BASE_URL = configuredBaseUrl.endsWith('/api/v1')
   ? configuredBaseUrl

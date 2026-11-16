@@ -113,7 +113,13 @@ export default function StudentLogin({
         ? 'verification_pending'
         : verifRecord?.status === 'PENDING'
         ? 'verification_pending'
-        : 'verification_pending',
+        : 'logged_in',
+      previewStats: {
+        totalAllowed: 5,
+        usedPreviews: 0,
+        remainingPreviews: isVerified ? 5 : 0,
+        nextResetDate: '90-Day Cycle'
+      },
       rejectionCount: rejCount,
       rejectionReason: verifRecord?.rejection_reason || undefined,
       role: 'student'

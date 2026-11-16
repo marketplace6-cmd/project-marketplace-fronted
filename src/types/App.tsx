@@ -986,7 +986,7 @@ export default function App() {
     }
     if (student.authState !== 'verified') {
       showToast('Access restricted: Only verified students can view protected PPT previews.', 'error');
-      navigate('verification');
+      navigate('dashboard');
       return;
     }
 
@@ -1059,8 +1059,17 @@ export default function App() {
   };
 
   const renderHeartCredits = (size: 'sm' | 'md' = 'md') => {
-    const total = student.previewStats.totalAllowed;
-    const remaining = student.previewStats.remainingPreviews;
+    const isVerified = student.authState === 'verified';
+    if (!isVerified) {
+      return (
+        <div className="inline-flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full text-slate-600">
+          <Lock className={`${size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-amber-600`} />
+          <span className="text-xs font-bold text-slate-700">0 / 5 Previews (Locked)</span>
+        </div>
+      );
+    }
+    const total = student.previewStats?.totalAllowed || 5;
+    const remaining = student.previewStats?.remainingPreviews ?? 5;
     return (
       <div className="inline-flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-3 py-1 rounded-full">
         <div className="flex items-center gap-1" title={`${remaining} of ${total} PPT preview credits remaining`}>
@@ -1936,7 +1945,7 @@ export default function App() {
                 role: 'student'
               }));
             }
-            navigate('verification');
+            navigate('dashboard');
           }}
         />
       );
@@ -2151,12 +2160,34 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Verified Student Status Badge */}
+              {/* Student Verification Status Badge */}
               <div className="pt-0.5">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  Verified Student
-                </span>
+                {student.authState === 'verified' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    Verified Student
+                  </span>
+                ) : student.authState === 'verification_pending' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                    <Clock className="w-4 h-4 text-amber-300 animate-spin" />
+                    Pending Verification
+                  </span>
+                ) : student.authState === 'verification_rejected' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-400/30">
+                    <AlertCircle className="w-4 h-4 text-rose-300" />
+                    Action Required
+                  </span>
+                ) : student.authState === 'verification_blocked' || (student.rejectionCount || 0) >= 2 ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-400/30">
+                    <AlertCircle className="w-4 h-4 text-rose-300" />
+                    Account Restricted
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                    <AlertCircle className="w-4 h-4 text-amber-300" />
+                    Not Verified
+                  </span>
+                )}
               </div>
 
               {/* Student ID & AK Referral Code Badges */}
@@ -2299,10 +2330,21 @@ export default function App() {
           <div className="grid sm:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200">
               <div className="text-xs text-slate-500">Preview Credits</div>
-              <div className="text-xl font-extrabold text-slate-900 mt-1">
-                {student.previewStats.remainingPreviews} / {student.previewStats.totalAllowed} ♥
-              </div>
-              <div className="text-[11px] text-slate-500 mt-1">Reset: {student.previewStats.nextResetDate}</div>
+              {student.authState === 'verified' ? (
+                <>
+                  <div className="text-xl font-extrabold text-slate-900 mt-1">
+                    {student.previewStats?.remainingPreviews ?? 5} / {student.previewStats?.totalAllowed ?? 5} ♥
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">Reset: {student.previewStats?.nextResetDate || '90-Day Cycle'}</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm font-extrabold text-amber-700 mt-1 flex items-center gap-1.5">
+                    <Lock size={15} className="text-amber-600" /> 0 / 5 Previews (Locked)
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">Unlocks on Admin Approval</div>
+                </>
+              )}
             </div>
             <div className="bg-white p-4 rounded-xl border border-slate-200">
               <div className="text-xs text-slate-500">Selected Projects</div>
@@ -2385,20 +2427,14 @@ export default function App() {
                         Rejected ({2 - (student.rejectionCount || 1)} Left)
                       </span>
                     ) : student.authState === 'verification_pending' ? (
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                        (student.rejectionCount || 0) > 0
-                          ? 'bg-violet-100 text-violet-900 border border-violet-300'
-                          : 'bg-amber-100 text-amber-800 border border-amber-300'
-                      }`}>
-                        <RefreshCw className={`w-3.5 h-3.5 ${
-                          (student.rejectionCount || 0) > 0 ? 'text-violet-700 animate-spin' : 'text-amber-600 animate-spin'
-                        }`} />
-                        {(student.rejectionCount || 0) > 0 ? 'Re-uploaded (Priority Review)' : 'Pending Review'}
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                        Pending Verification
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                        <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-                        Unverified
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                        Not Verified
                       </span>
                     )}
                   </div>
@@ -2533,13 +2569,9 @@ export default function App() {
                       </h3>
                     </div>
                     {student.authState === 'verification_pending' && (
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                        (student.rejectionCount || 0) > 0
-                          ? 'bg-violet-200 text-violet-900 border border-violet-300'
-                          : 'bg-amber-200 text-amber-900'
-                      }`}>
-                        <CheckCircle2 size={13} className={(student.rejectionCount || 0) > 0 ? 'text-violet-700' : 'text-amber-700'} />
-                        {(student.rejectionCount || 0) > 0 ? '⚡ Re-uploaded (Priority Queue #1)' : 'Under Admin Review'}
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        <Clock size={13} className="text-amber-700 animate-spin" />
+                        Pending Verification
                       </span>
                     )}
                   </div>

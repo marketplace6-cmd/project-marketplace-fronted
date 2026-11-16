@@ -152,7 +152,7 @@ export default function StudentSignup({
       college: college.trim(),
       course: course.trim(),
       referral_code: permanentReferralCode,
-      status: 'PENDING',
+      status: 'UNVERIFIED',
       rejection_count: 0,
       rejection_reason: null,
       submitted_at: new Date().toISOString(),
@@ -205,7 +205,13 @@ export default function StudentSignup({
       mobile: '',
       referralCode: permanentReferralCode,
       accessToken: token,
-      authState: 'verification_pending',
+      authState: 'logged_in',
+      previewStats: {
+        totalAllowed: 5,
+        usedPreviews: 0,
+        remainingPreviews: 0,
+        nextResetDate: '90-Day Cycle'
+      },
       role: 'student'
     };
 

@@ -280,43 +280,36 @@ export const StudentVerificationAPI = {
     userIdentifier?: { email?: string; userId?: string | number; studentIdCode?: string }
   ): Promise<StudentVerificationStatus | null> {
     try {
-      const data = await request('/verification/me', accessToken);
-      if (data === null) return null;
-      if (!isStudentStatus(data)) throw new VerificationApiError('Verification status response is invalid.', 502);
-      return data;
-    } catch {
-      try {
-        // Resolve user identifier
-        let targetEmail = userIdentifier?.email?.toLowerCase().trim();
-        let targetIdCode = userIdentifier?.studentIdCode?.trim();
-        let targetUserId = userIdentifier?.userId;
+      // Resolve user identifier
+      let targetEmail = userIdentifier?.email?.toLowerCase().trim();
+      let targetIdCode = userIdentifier?.studentIdCode?.trim();
+      let targetUserId = userIdentifier?.userId;
 
-        if (!targetEmail && !targetIdCode && !targetUserId) {
-          const { data: sessionData } = await supabase.auth.getSession();
-          targetEmail = sessionData?.session?.user?.email?.toLowerCase().trim();
-          targetUserId = sessionData?.session?.user?.id;
-        }
+      if (!targetEmail && !targetIdCode && !targetUserId) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        targetEmail = sessionData?.session?.user?.email?.toLowerCase().trim();
+        targetUserId = sessionData?.session?.user?.id;
+      }
 
-        // If no user context exists, do not leak another student's record
-        if (!targetEmail && !targetIdCode && !targetUserId) {
-          return null;
-        }
+      // If no user context exists, do not leak another student's record
+      if (!targetEmail && !targetIdCode && !targetUserId) {
+        return null;
+      }
 
-        let sbQuery = supabase.from('verifications').select('*');
-        if (targetEmail && targetIdCode) {
-          sbQuery = sbQuery.or(`email.eq.${targetEmail},email.ilike.${targetEmail},student_id_code.eq.${targetIdCode}`);
-        } else if (targetEmail) {
-          sbQuery = sbQuery.or(`email.eq.${targetEmail},email.ilike.${targetEmail}`);
-        } else if (targetIdCode) {
-          sbQuery = sbQuery.eq('student_id_code', targetIdCode);
-        } else if (targetUserId) {
-          sbQuery = sbQuery.eq('user_id', targetUserId);
-        }
+      let sbQuery = supabase.from('verifications').select('*');
+      if (targetEmail && targetIdCode) {
+        sbQuery = sbQuery.or(`email.eq.${targetEmail},email.ilike.${targetEmail},student_id_code.eq.${targetIdCode}`);
+      } else if (targetEmail) {
+        sbQuery = sbQuery.or(`email.eq.${targetEmail},email.ilike.${targetEmail}`);
+      } else if (targetIdCode) {
+        sbQuery = sbQuery.eq('student_id_code', targetIdCode);
+      } else if (targetUserId) {
+        sbQuery = sbQuery.eq('user_id', targetUserId);
+      }
 
-        const { data, error: fetchErr } = await sbQuery.order('updated_at', { ascending: false }).limit(1).maybeSingle();
-        if (fetchErr) {
-          console.warn('Error querying verification from Supabase:', fetchErr);
-        } else if (data) {
+      const { data, error: fetchErr } = await sbQuery.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+      if (!fetchErr) {
+        if (data) {
           const statusResult: StudentVerificationStatus = {
             id: Number(data.id),
             user_id: data.user_id,
@@ -342,11 +335,20 @@ export const StudentVerificationAPI = {
           saveLocalStudentVerification(null as any, targetEmail || targetIdCode);
           return null;
         }
-      } catch {
-        /* fallback */
       }
-      return getLocalStudentVerification(userIdentifier?.email || userIdentifier?.studentIdCode);
+    } catch {
+      /* continue to optional backend */
     }
+
+    try {
+      const data = await request('/verification/me', accessToken);
+      if (data === null) return null;
+      if (isStudentStatus(data)) return data;
+    } catch {
+      /* continue to local cache */
+    }
+
+    return getLocalStudentVerification(userIdentifier?.email || userIdentifier?.studentIdCode);
   },
 
   async getChallenge(accessToken: string): Promise<VerificationChallenge> {
@@ -605,29 +607,7 @@ export const StudentVerificationAPI = {
       }
     }
 
-    // 3. Post to backend endpoints (optional)
-    formData.append('is_reupload', String(isReupload));
-    formData.append('status', newStatus);
-    const endpoints = [
-      `${verificationApiBaseUrl}/students/verify`,
-      `${verificationApiBaseUrl.replace(/\/v1$/, '')}/students/verify`,
-      '/api/students/verify',
-      `${verificationApiBaseUrl}/verification/submit-dual`
-    ];
-
-    for (const url of endpoints) {
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          body: formData
-        });
-        if (resp.ok) break;
-      } catch {
-        /* try next */
-      }
-    }
-
-    // 4. Update Supabase verifications row FIRST - never swallow errors into localStorage!
+    // 3. Update Supabase verifications row directly - never swallow errors into localStorage!
     const record = {
       user_id: userId,
       student_name: details.student_name,
@@ -942,22 +922,7 @@ export const AdminVerificationAPI = {
     accessToken: string,
     filters: { search: string; status: string; page: number }
   ): Promise<VerificationQueue> {
-    try {
-      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
-      if (filters.search) query.set('search', filters.search);
-      if (filters.status) query.set('verification_status', filters.status);
-      const data = await request(`/admin/verifications?${query}`, accessToken);
-      if (isQueue(data)) {
-        return {
-          ...data,
-          items: sortVerificationItems(data.items)
-        };
-      }
-    } catch {
-      /* Proceed to direct Supabase query */
-    }
-
-    // 1. Direct Supabase Query
+    // 1. Direct Supabase Query (Cloud Database)
     try {
       let sbQuery = supabase.from('verifications').select('*', { count: 'exact' });
       if (filters.status) sbQuery = sbQuery.eq('status', filters.status);
@@ -1030,7 +995,22 @@ export const AdminVerificationAPI = {
       }
     } catch (err: any) {
       if (err instanceof VerificationApiError) throw err;
-      throw new VerificationApiError(err?.message || 'Failed to load verification queue from database.', 500);
+      /* Try backend API if Supabase query threw an error */
+    }
+
+    try {
+      const query = new URLSearchParams({ page: String(filters.page), page_size: '25' });
+      if (filters.search) query.set('search', filters.search);
+      if (filters.status) query.set('verification_status', filters.status);
+      const data = await request(`/admin/verifications?${query}`, accessToken);
+      if (isQueue(data)) {
+        return {
+          ...data,
+          items: sortVerificationItems(data.items)
+        };
+      }
+    } catch {
+      /* Proceed to return empty */
     }
 
     return {
@@ -1162,16 +1142,7 @@ export const AdminVerificationAPI = {
     const studentEmail = studentMeta?.email || (idx !== -1 ? all[idx].email : null);
     const now = new Date().toISOString();
 
-    try {
-      await request(`/admin/verification/${verificationId}/decision`, accessToken, {
-        method: 'POST',
-        body: JSON.stringify({ status: finalStatus === 'BLOCKED' ? 'REJECTED' : finalStatus, rejection_reason: rejectionReason })
-      });
-    } catch {
-      /* continue to Supabase & local state sync */
-    }
-
-    // 2. Update Supabase verifications
+    // 2. Update Supabase verifications directly
     try {
       const orConditions: string[] = [`id.eq.${verificationId}`, `user_id.eq.${verificationId}`];
       if (studentCodeIdentifier) orConditions.push(`student_id_code.eq.${studentCodeIdentifier}`);
@@ -1190,6 +1161,15 @@ export const AdminVerificationAPI = {
     } catch (err: any) {
       if (err instanceof VerificationApiError) throw err;
       throw new VerificationApiError(err?.message || 'Failed to update verification status in database.', 500);
+    }
+
+    try {
+      await request(`/admin/verification/${verificationId}/decision`, accessToken, {
+        method: 'POST',
+        body: JSON.stringify({ status: finalStatus === 'BLOCKED' ? 'REJECTED' : finalStatus, rejection_reason: rejectionReason })
+      });
+    } catch {
+      /* continue to local state sync */
     }
 
     // 3. Automated Notification Generation & Logging
@@ -1348,20 +1328,7 @@ export const AdminVerificationAPI = {
       deleteSupabaseStorageFile(item.back_image_url || item.back_data_url)
     ]);
 
-    // 2. Call backend delete endpoint if accessible (FastAPI / Express)
-    try {
-      await fetch(`${verificationApiBaseUrl}/admin/verification/${item.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
-        }
-      });
-    } catch {
-      /* continue to database deletion */
-    }
-
-    // 3. Execute true DELETE query in Supabase verifications table
+    // 2. Execute true DELETE query in Supabase verifications table
     const orConditions: string[] = [];
     if (item.id) orConditions.push(`id.eq.${item.id}`);
     if (item.student_id_code) orConditions.push(`student_id_code.eq.${item.student_id_code}`);
@@ -1377,6 +1344,19 @@ export const AdminVerificationAPI = {
       if (dbError) {
         throw new Error(`Database error deleting record: ${dbError.message} (${dbError.code || 'RLS_RESTRICTION'})`);
       }
+    }
+
+    // 3. Call backend delete endpoint if accessible (optional)
+    try {
+      await fetch(`${verificationApiBaseUrl}/admin/verification/${item.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        }
+      });
+    } catch {
+      /* continue */
     }
 
     // 4. Remove any matching cached entries from localStorage so page reload never restores deleted items

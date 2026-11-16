@@ -7,6 +7,7 @@ import {
   Phone,
   ShieldCheck,
   AlertCircle,
+  AlertTriangle,
   Copy,
   Check,
   RefreshCw,
@@ -17,10 +18,12 @@ import {
   Clock,
   Sparkles,
   CheckCircle2,
-  Lock
+  Lock,
+  Upload
 } from 'lucide-react';
 import { StudentProfile } from './types';
 import { supabase } from '../supabaseClient';
+import { StudentVerificationAPI } from './verificationService';
 
 export interface ProfilePageProps {
   student: StudentProfile;
@@ -40,6 +43,13 @@ export default function ProfilePage({
   const [copiedCode, setCopiedCode] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // ID Card Upload States
+  const [idCardFrontFile, setIdCardFrontFile] = useState<File | null>(null);
+  const [idCardBackFile, setIdCardBackFile] = useState<File | null>(null);
+  const [idCardFrontPreview, setIdCardFrontPreview] = useState<string>('');
+  const [idCardBackPreview, setIdCardBackPreview] = useState<string>('');
+  const [idCardSubmitting, setIdCardSubmitting] = useState<boolean>(false);
+
   const displayToast = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
     if (showToast) showToast(msg, type);
   };
@@ -51,6 +61,161 @@ export default function ProfilePage({
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2000);
       displayToast(`Referral Code ${code} copied to clipboard!`, 'success');
+    }
+  };
+
+  const isValidIdCardFormat = (file: File) => {
+    const validMimes = ['image/png', 'image/jpeg', 'image/jpg'];
+    const validExts = /\.(png|jpe?g)$/i;
+    return validMimes.includes(file.type.toLowerCase()) || validExts.test(file.name);
+  };
+
+  const handleFrontIdFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!isValidIdCardFormat(file) || file.size > 50 * 1024) {
+      e.target.value = '';
+      setIdCardFrontFile(null);
+      setIdCardFrontPreview('');
+      displayToast('Front file size must be 50 KB or below and in PNG/JPG format.', 'error');
+      return;
+    }
+
+    setIdCardFrontFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setIdCardFrontPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleBackIdFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!isValidIdCardFormat(file) || file.size > 50 * 1024) {
+      e.target.value = '';
+      setIdCardBackFile(null);
+      setIdCardBackPreview('');
+      displayToast('Back file size must be 50 KB or below and in PNG/JPG format.', 'error');
+      return;
+    }
+
+    setIdCardBackFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setIdCardBackPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmitVerification = async () => {
+    if (student.authState === 'verification_blocked' || (student.rejectionCount || 0) >= 2) {
+      displayToast('Account is permanently restricted from further verification submissions.', 'error');
+      return;
+    }
+    if (!idCardFrontFile) {
+      displayToast('Please choose at least the Front side of your College ID Card.', 'error');
+      return;
+    }
+    if (!isValidIdCardFormat(idCardFrontFile) || idCardFrontFile.size > 50 * 1024) {
+      displayToast('Front file size must be 50 KB or below and in PNG/JPG format.', 'error');
+      return;
+    }
+    if (idCardBackFile && (!isValidIdCardFormat(idCardBackFile) || idCardBackFile.size > 50 * 1024)) {
+      displayToast('Back file size must be 50 KB or below and in PNG/JPG format.', 'error');
+      return;
+    }
+
+    setIdCardSubmitting(true);
+    try {
+      const frontDataUrl = idCardFrontPreview || await new Promise<string>((res) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.readAsDataURL(idCardFrontFile);
+      });
+
+      let backDataUrl = '';
+      if (idCardBackFile) {
+        backDataUrl = idCardBackPreview || await new Promise<string>((res) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result as string);
+          r.readAsDataURL(idCardBackFile);
+        });
+      }
+
+      let targetEmail = student.email?.trim() || '';
+      if (!targetEmail) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        targetEmail = sessionData?.session?.user?.email?.trim() || '';
+      }
+
+      if (!targetEmail) {
+        displayToast('Please sign in or enter your registered student email before submitting.', 'error');
+        setIdCardSubmitting(false);
+        return;
+      }
+
+      const targetName = student.fullName?.trim() || targetEmail.split('@')[0] || 'Student';
+      const targetCollege = student.collegeName?.trim() || 'University Student';
+      const targetCourse = student.department?.trim() || 'Degree Program';
+      const targetId = (student.id && student.id !== 'STU-000-000') ? student.id : `STU-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const targetReferralCode = student.referralCode || targetId;
+      const targetPhone = student.mobile?.trim() || '';
+
+      const formData = new FormData();
+      formData.append('front_image', idCardFrontFile);
+      if (idCardBackFile) formData.append('back_image', idCardBackFile);
+      formData.append('student_name', targetName);
+      formData.append('email', targetEmail);
+      formData.append('phone', targetPhone);
+      formData.append('college', targetCollege);
+      formData.append('course', targetCourse);
+      formData.append('student_id_code', targetId);
+      formData.append('referral_code', targetReferralCode);
+      formData.append('user_id', targetId);
+
+      const isReupload = student.authState === 'verification_rejected' || (student.rejectionCount || 0) > 0;
+
+      await StudentVerificationAPI.submitDual(formData, {
+        student_name: targetName,
+        email: targetEmail,
+        phone: targetPhone,
+        college: targetCollege,
+        course: targetCourse,
+        student_id_code: targetId,
+        referral_code: targetReferralCode,
+        front_data_url: frontDataUrl,
+        back_data_url: backDataUrl,
+        front_filename: idCardFrontFile.name,
+        back_filename: idCardBackFile ? idCardBackFile.name : undefined,
+        user_id: targetId,
+        is_reupload: isReupload
+      });
+
+      if (onUpdateProfile) {
+        onUpdateProfile({
+          authState: 'verification_pending',
+          rejectionReason: undefined,
+          previewStats: {
+            totalAllowed: 5,
+            usedPreviews: 0,
+            remainingPreviews: 0,
+            nextResetDate: '90-Day Cycle'
+          }
+        });
+      }
+
+      displayToast(
+        isReupload
+          ? 'Corrected ID documents re-submitted! Prioritized in admin verification queue.'
+          : 'ID documents (Front & Back) submitted successfully! Admin review pending.',
+        'success'
+      );
+
+      // Trigger server re-sync
+      void handleLiveRefresh();
+    } catch (err: any) {
+      displayToast(err?.message || 'Failed to submit verification to database.', 'error');
+    } finally {
+      setIdCardSubmitting(false);
     }
   };
 
@@ -96,7 +261,10 @@ export default function ProfilePage({
       if (rows && rows.length > 0) {
         const v = rows[0];
         const isVerified = v.status === 'APPROVED' || v.status === 'VERIFIED';
+        const isPending = v.status === 'PENDING' || v.status === 'RE-UPLOADED';
+        const isRejected = v.status === 'REJECTED';
         const rejCount = Number(v.rejection_count || 0);
+        const isBlocked = v.status === 'BLOCKED' || rejCount >= 2;
 
         const updated: Partial<StudentProfile> = {
           fullName: v.student_name || student.fullName,
@@ -106,17 +274,21 @@ export default function ProfilePage({
           referralCode: v.referral_code || v.student_id_code || student.referralCode,
           authState: isVerified
             ? 'verified'
-            : v.status === 'BLOCKED' || rejCount >= 2
+            : isBlocked
             ? 'verification_blocked'
-            : v.status === 'REJECTED'
+            : isRejected
             ? 'verification_rejected'
-            : v.status === 'RE-UPLOADED'
+            : isPending
             ? 'verification_pending'
-            : v.status === 'PENDING'
-            ? 'verification_pending'
-            : 'verification_pending',
+            : 'logged_in',
           rejectionCount: rejCount,
-          rejectionReason: v.rejection_reason || undefined
+          rejectionReason: v.rejection_reason || undefined,
+          previewStats: {
+            totalAllowed: 5,
+            usedPreviews: 0,
+            remainingPreviews: isVerified ? 5 : 0,
+            nextResetDate: '90-Day Cycle'
+          }
         };
 
         if (onUpdateProfile) {
@@ -124,15 +296,20 @@ export default function ProfilePage({
         }
         displayToast('Profile details updated from live server!', 'success');
       } else {
-        // Not yet verified in database
+        // Not yet submitted in database
         if (onUpdateProfile) {
           onUpdateProfile({
-            authState: 'verification_pending',
+            authState: 'logged_in',
             rejectionCount: 0,
-            rejectionReason: undefined
+            rejectionReason: undefined,
+            previewStats: {
+              totalAllowed: 5,
+              usedPreviews: 0,
+              remainingPreviews: 0,
+              nextResetDate: '90-Day Cycle'
+            }
           });
         }
-        displayToast('Profile is up to date (Pending Verification).', 'info');
       }
     } catch (err: any) {
       console.warn('Profile refresh error:', err);
@@ -159,7 +336,6 @@ export default function ProfilePage({
     <div className="max-w-5xl mx-auto py-8 px-4 sm:px-6 space-y-6">
       {/* 1. Profile Hero Header */}
       <div className="bg-gradient-to-r from-purple-700 via-indigo-600 to-indigo-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl shadow-purple-950/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
-        {/* Subtle decorative glow */}
         <div className="absolute right-0 top-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
 
         <div className="flex items-center gap-4 sm:gap-5 z-10">
@@ -179,16 +355,22 @@ export default function ProfilePage({
               ) : student.authState === 'verification_pending' ? (
                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/25 border border-amber-300/40 text-amber-100 flex items-center gap-1 shadow-2xs">
                   <Clock size={12} className="text-amber-300 animate-spin" />
-                  Verification Pending • Under Admin Review
+                  Pending Verification
                 </span>
               ) : student.authState === 'verification_rejected' ? (
                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-400/25 border border-rose-300/40 text-rose-100 flex items-center gap-1">
                   <AlertCircle size={12} className="text-rose-300" />
                   Action Required
                 </span>
+              ) : student.authState === 'verification_blocked' || (student.rejectionCount || 0) >= 2 ? (
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-400/25 border border-rose-300/40 text-rose-100 flex items-center gap-1">
+                  <AlertCircle size={12} className="text-rose-300" />
+                  Account Restricted
+                </span>
               ) : (
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white/10 border border-white/20 text-purple-200">
-                  Unverified
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/25 border border-amber-300/40 text-amber-100 flex items-center gap-1">
+                  <AlertCircle size={12} className="text-amber-300" />
+                  Not Verified
                 </span>
               )}
               <span className="text-xs text-purple-200">
@@ -214,16 +396,6 @@ export default function ProfilePage({
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
             <span>{refreshing ? 'Syncing…' : 'Sync Profile'}</span>
           </button>
-          {onNavigateVerification && (
-            <button
-              type="button"
-              onClick={onNavigateVerification}
-              className="px-4 py-2.5 rounded-xl bg-white text-purple-900 hover:bg-purple-50 text-xs font-extrabold shadow-md transition-all active:scale-[0.98] flex items-center gap-1.5"
-            >
-              <FileText size={14} className="text-purple-700" />
-              <span>Verification Status</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -231,23 +403,17 @@ export default function ProfilePage({
       {student.authState === 'verification_pending' && (
         <div className="bg-amber-50/90 border-2 border-amber-300 rounded-2xl p-4 sm:p-5 text-xs text-amber-950 flex items-start justify-between gap-3 shadow-xs animate-in fade-in duration-200">
           <div className="flex items-start gap-3">
-            <Clock size={20} className="text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+            <Clock size={20} className="text-amber-600 shrink-0 mt-0.5 animate-spin" />
             <div>
               <h4 className="font-bold text-sm text-amber-900">Verification Pending • Under Admin Review</h4>
               <p className="mt-1 text-amber-800 leading-relaxed">
-                Your submitted student ID card documents (Front & Back) have been securely received and are currently queued for administrator review. Full student privileges, verified downloads, and 5 free PPT slide previews will unlock immediately once approved.
+                Your submitted student ID card documents have been securely received and are queued for administrator review. Full student privileges, evaluated downloads, and 5 free PPT slide previews will unlock immediately once approved.
               </p>
             </div>
           </div>
-          {onNavigateVerification && (
-            <button
-              type="button"
-              onClick={onNavigateVerification}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shrink-0 transition-colors shadow-2xs whitespace-nowrap"
-            >
-              Check Status
-            </button>
-          )}
+          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-200 text-amber-900 border border-amber-300">
+            <Clock size={12} className="text-amber-700 animate-spin" /> Pending Verification
+          </span>
         </div>
       )}
 
@@ -266,19 +432,10 @@ export default function ProfilePage({
               </p>
             </div>
           </div>
-          {onNavigateVerification && (
-            <button
-              type="button"
-              onClick={onNavigateVerification}
-              className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl shrink-0 transition-colors"
-            >
-              Re-Upload ID
-            </button>
-          )}
         </div>
       )}
 
-      {/* 3. Core Cards Grid */}
+      {/* 4. Core Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Card 1: Unique Student ID & Permanent Referral Code */}
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-4">
@@ -316,7 +473,7 @@ export default function ProfilePage({
               onClick={onNavigateReferrals}
               className="w-full text-center text-xs font-bold text-purple-700 hover:text-purple-900 hover:underline flex items-center justify-center gap-1 pt-1"
             >
-              <span>View Referral Network & Earnings</span>
+              <span>View Referral Network &amp; Earnings</span>
               <ExternalLink size={13} />
             </button>
           )}
@@ -337,7 +494,7 @@ export default function ProfilePage({
             ) : student.authState === 'verification_pending' ? (
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-300 px-3 py-1 rounded-full shadow-2xs">
                 <Clock size={12} className="text-amber-600 animate-spin" />
-                Verification Pending • Under Admin Review
+                Pending Verification
               </span>
             ) : student.authState === 'verification_rejected' ? (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-full">
@@ -345,8 +502,9 @@ export default function ProfilePage({
                 Action Required
               </span>
             ) : (
-              <span className="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full">
-                Unverified
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                <AlertCircle size={12} className="text-amber-600" />
+                Not Verified
               </span>
             )}
           </div>
@@ -369,17 +527,6 @@ export default function ProfilePage({
                 : 'Registration Initialized'}
             </div>
           </div>
-
-          {onNavigateVerification && (
-            <button
-              type="button"
-              onClick={onNavigateVerification}
-              className="w-full text-center text-xs font-bold text-indigo-700 hover:text-indigo-900 hover:underline flex items-center justify-center gap-1 pt-1"
-            >
-              <span>{student.authState === 'verified' ? 'View ID Card Record' : 'Upload College ID Card'}</span>
-              <ExternalLink size={13} />
-            </button>
-          )}
         </div>
 
         {/* Card 3: Free PPT Preview Heart Credits */}
@@ -423,7 +570,7 @@ export default function ProfilePage({
             <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between">
               <div className="flex items-center gap-2 text-slate-600 text-xs font-medium">
                 <Lock size={15} className="text-amber-600" />
-                <span>5 PPT Preview Credits (Locked)</span>
+                <span>0 / 5 Previews (Locked)</span>
               </div>
               <span className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-0.5 rounded-full">
                 Unlocked on Approval
@@ -439,11 +586,117 @@ export default function ProfilePage({
         </div>
       </div>
 
-      {/* 4. Academic Details & Credentials Section */}
+      {/* 5. Complete Your Student ID Verification Form (Embedded) */}
+      {student.authState !== 'verified' && student.authState !== 'verification_blocked' && (student.rejectionCount || 0) < 2 && (
+        <div id="student-verification-upload-section" className="bg-amber-50/80 border border-amber-200 rounded-3xl p-6 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-amber-600" />
+              <h3 className="text-lg font-bold text-amber-900">
+                {student.authState === 'verification_rejected' ? 'Re-upload Your Student ID Card' : 'Complete Your Student Verification'}
+              </h3>
+            </div>
+            {student.authState === 'verification_pending' && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                <Clock size={13} className="text-amber-700 animate-spin" />
+                Pending Verification
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-amber-800">
+            Please upload clear photos of the front and back of your valid college/university ID card. Strictly PNG or JPG format (maximum 50 KB each). Without verification, PPT previews are locked.
+          </p>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            {/* Front Side */}
+            <div className={`relative rounded-2xl border-2 border-dashed p-4 text-center transition-all ${idCardFrontFile ? 'border-emerald-400 bg-white shadow-xs' : 'border-amber-300 bg-white hover:bg-amber-50/50'}`}>
+              {idCardFrontPreview ? (
+                <div className="space-y-2">
+                  <div className="relative mx-auto h-32 w-full max-w-[240px] overflow-hidden rounded-xl border border-slate-200 bg-slate-900/5 shadow-inner">
+                    <img src={idCardFrontPreview} alt="Front ID Preview" className="h-full w-full object-contain" />
+                    <span className="absolute top-2 right-2 rounded-full bg-emerald-600 p-1 text-white shadow-xs">
+                      <CheckCircle2 size={13} />
+                    </span>
+                  </div>
+                  <p className="truncate text-xs font-bold text-slate-800">{idCardFrontFile?.name}</p>
+                  <p className="text-[10px] text-slate-500 font-mono">{(idCardFrontFile!.size / 1024).toFixed(0)} KB • ID Card (Front Side)</p>
+                  <label className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">
+                    <Upload size={12} /> Change Front Image
+                    <input type="file" accept="image/png, image/jpeg" onChange={handleFrontIdFileChange} className="hidden" />
+                  </label>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center cursor-pointer py-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 mb-2">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <span className="block text-xs font-bold text-slate-800 mb-0.5">ID Card (Front Side)</span>
+                  <span className="text-[11px] text-slate-500 mb-2">PNG or JPG format (max 50 KB)</span>
+                  <span className="px-3 py-1.5 rounded-lg bg-amber-100/70 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-colors">
+                    Choose Front File
+                  </span>
+                  <input type="file" accept="image/png, image/jpeg" onChange={handleFrontIdFileChange} className="hidden" />
+                </label>
+              )}
+            </div>
+
+            {/* Back Side */}
+            <div className={`relative rounded-2xl border-2 border-dashed p-4 text-center transition-all ${idCardBackFile ? 'border-emerald-400 bg-white shadow-xs' : 'border-amber-300 bg-white hover:bg-amber-50/50'}`}>
+              {idCardBackPreview ? (
+                <div className="space-y-2">
+                  <div className="relative mx-auto h-32 w-full max-w-[240px] overflow-hidden rounded-xl border border-slate-200 bg-slate-900/5 shadow-inner">
+                    <img src={idCardBackPreview} alt="Back ID Preview" className="h-full w-full object-contain" />
+                    <span className="absolute top-2 right-2 rounded-full bg-emerald-600 p-1 text-white shadow-xs">
+                      <CheckCircle2 size={13} />
+                    </span>
+                  </div>
+                  <p className="truncate text-xs font-bold text-slate-800">{idCardBackFile?.name}</p>
+                  <p className="text-[10px] text-slate-500 font-mono">{(idCardBackFile!.size / 1024).toFixed(0)} KB • ID Card (Back Side)</p>
+                  <label className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">
+                    <Upload size={12} /> Change Back Image
+                    <input type="file" accept="image/png, image/jpeg" onChange={handleBackIdFileChange} className="hidden" />
+                  </label>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center cursor-pointer py-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 mb-2">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <span className="block text-xs font-bold text-slate-800 mb-0.5">ID Card (Back Side)</span>
+                  <span className="text-[11px] text-slate-500 mb-2">PNG or JPG format (max 50 KB)</span>
+                  <span className="px-3 py-1.5 rounded-lg bg-amber-100/70 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-colors">
+                    Choose Back File
+                  </span>
+                  <input type="file" accept="image/png, image/jpeg" onChange={handleBackIdFileChange} className="hidden" />
+                </label>
+              )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={idCardSubmitting || !idCardFrontFile}
+            onClick={handleSubmitVerification}
+            className="mt-3 w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-amber-950 text-sm font-bold rounded-2xl transition-all shadow-xs flex items-center justify-center gap-2"
+          >
+            {idCardSubmitting ? (
+              <>
+                <RefreshCw size={16} className="animate-spin" /> Submitting Documents to Database...
+              </>
+            ) : (
+              <>
+                <ShieldCheck size={16} /> {student.authState === 'verification_rejected' ? 'Resubmit Corrected ID Documents' : 'Submit Documents for Verification'}
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* 6. Academic Details & Credentials Section */}
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-7 shadow-xs space-y-4">
         <h3 className="font-extrabold text-base text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
           <GraduationCap size={18} className="text-indigo-600" />
-          <span>Academic & Personal Credentials</span>
+          <span>Academic &amp; Personal Credentials</span>
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
@@ -483,7 +736,7 @@ export default function ProfilePage({
               {student.authState === 'verified' ? (
                 <span className="text-emerald-700">Verified Student</span>
               ) : student.authState === 'verification_pending' ? (
-                <span className="text-amber-700">Verification Pending</span>
+                <span className="text-amber-700">Pending Verification</span>
               ) : student.authState === 'verification_rejected' ? (
                 <span className="text-rose-700">Re-upload Required</span>
               ) : (
@@ -501,4 +754,3 @@ export default function ProfilePage({
     </div>
   );
 }
-

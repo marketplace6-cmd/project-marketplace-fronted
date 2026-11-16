@@ -16,7 +16,7 @@ export const INITIAL_STUDENT: StudentProfile = {
   previewStats: {
     totalAllowed: 5,
     usedPreviews: 0,
-    remainingPreviews: 5,
+    remainingPreviews: 0,
     nextResetDate: '90-Day Cycle'
   },
   viewedProjectIds: [],

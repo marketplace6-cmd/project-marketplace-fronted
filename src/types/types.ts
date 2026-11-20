@@ -87,6 +87,7 @@ export interface SupportTicket {
   description: string;
   submissionDate: string;
   status: 'Open' | 'In Progress' | 'Resolved';
+  autoReply?: string;
 }
 
 export interface StudentProfile {

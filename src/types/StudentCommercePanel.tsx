@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ProjectDTO } from './types';
 import {
+  AVAILABLE_TIME_SLOTS,
   CommerceNotification,
   MeetingRecordDTO,
   SelectionRecord,
@@ -22,20 +23,6 @@ import {
   StudentOrderRecord
 } from './commerceService';
 import { VerificationApiError } from './verificationService';
-
-const AVAILABLE_TIME_SLOTS = [
-  '10:00 AM - 10:05 AM',
-  '10:30 AM - 10:35 AM',
-  '11:00 AM - 11:05 AM',
-  '11:30 AM - 11:35 AM',
-  '02:00 PM - 02:05 PM',
-  '02:30 PM - 02:35 PM',
-  '03:00 PM - 03:05 PM',
-  '03:30 PM - 03:35 PM',
-  '04:00 PM - 04:05 PM',
-  '04:30 PM - 04:35 PM',
-  '05:00 PM - 05:05 PM'
-];
 
 interface StudentCommercePanelProps {
   view: 'selected' | 'meetings' | 'orders';
@@ -50,6 +37,8 @@ interface StudentCommercePanelProps {
   onSessionExpired: () => void;
   onLogin: () => void;
   onNavigate?: (tab: string) => void;
+  onToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
+  onMeetingsLoaded?: (meetings: MeetingRecordDTO[]) => void;
 }
 
 function paymentLabel(status: string | null) {
@@ -79,7 +68,10 @@ export default function StudentCommercePanel({
   onSelectionChange,
   onToggleSelection,
   onSessionExpired,
-  onLogin
+  onLogin,
+  onNavigate,
+  onToast,
+  onMeetingsLoaded
 }: StudentCommercePanelProps) {
   const [orders, setOrders] = useState<StudentOrderRecord[]>([]);
   const [meetings, setMeetings] = useState<MeetingRecordDTO[]>([]);
@@ -108,11 +100,12 @@ export default function StudentCommercePanel({
         setOrders(fetchedOrders);
       } else {
         const [currentMeetings, currentSelections, currentNotifications] = await Promise.all([
-          StudentCommerceAPI.listMeetings(accessToken, studentIdentifier),
-          StudentCommerceAPI.listSelections(accessToken),
+          StudentCommerceAPI.listMeetings(accessToken, { studentId, studentEmail }),
+          StudentCommerceAPI.listSelections(accessToken, studentId),
           StudentCommerceAPI.listNotifications(accessToken)
         ]);
         setMeetings(currentMeetings);
+        onMeetingsLoaded?.(currentMeetings);
         setSelections(currentSelections);
         setNotifications(currentNotifications.filter((item) => item.notification_type.startsWith('meeting_')));
         onSelectionChange?.(currentSelections.map((item) => String(item.project_id)));
@@ -126,7 +119,7 @@ export default function StudentCommercePanel({
     } finally {
       setLoading(false);
     }
-  }, [accessToken, studentIdentifier, onSelectionChange, onSessionExpired, view]);
+  }, [accessToken, studentIdentifier, studentId, studentEmail, onSelectionChange, onSessionExpired, onMeetingsLoaded, view]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -142,45 +135,29 @@ export default function StudentCommercePanel({
 
     // Check active meetings limit (max 3)
     const activeMeetingsCount = meetings.filter(
-      (m) => !['CANCELLED', 'COMPLETED', 'REJECTED'].includes(m.status)
+      (m) => !['CANCELLED', 'REJECTED', 'DECLINED'].includes(m.status?.toUpperCase() || '')
     ).length;
     if (activeMeetingsCount >= 3) {
-      setRequestMessage('Maximum limit reached: You can have at most 3 active guidance meetings.');
+      const limitMsg = 'Maximum limit reached: You can have at most 3 active guidance meetings.';
+      setRequestMessage(limitMsg);
+      onToast?.(limitMsg, 'error');
       return;
     }
 
     const values = new FormData(event.currentTarget);
     const form = event.currentTarget;
-    const projectId = Number(values.get('project_id'));
-    const date = String(values.get('date') || '');
-    const slot = String(values.get('slot') || values.get('time') || '');
-    if (!Number.isInteger(projectId) || !date || !slot) {
-      setRequestMessage('Choose a project, date, and 5-minute time slot.');
+    const projectId = String(values.get('project_id') || '').trim();
+    const date = String(values.get('date') || '').trim();
+    const slot = String(values.get('slot') || values.get('time') || '').trim();
+    if (!projectId || !date || !slot) {
+      const chooseMsg = 'Choose a project, session date, and 5-minute time slot.';
+      setRequestMessage(chooseMsg);
+      onToast?.(chooseMsg, 'error');
       return;
     }
 
-    const selectedProj = projects.find((p) => Number(p.id) === projectId);
+    const selectedProj = projects.find((p) => String(p.id) === String(projectId));
     const projectTitle = selectedProj?.title || `Project #${projectId}`;
-
-    // Parse start time from slot if available
-    let startIso = new Date(`${date}T10:00:00`).toISOString();
-    let endIso = new Date(`${date}T10:05:00`).toISOString();
-    try {
-      const match = slot.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      if (match) {
-        let hours = parseInt(match[1], 10);
-        const minutes = parseInt(match[2], 10);
-        const meridian = match[3].toUpperCase();
-        if (meridian === 'PM' && hours < 12) hours += 12;
-        if (meridian === 'AM' && hours === 12) hours = 0;
-        const s = new Date(`${date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
-        const e = new Date(s.getTime() + 5 * 60_000);
-        startIso = s.toISOString();
-        endIso = e.toISOString();
-      }
-    } catch {
-      // fallback to default
-    }
 
     setSubmitting(true);
     setRequestMessage('');
@@ -191,20 +168,22 @@ export default function StudentCommercePanel({
         student_email: studentEmail || '',
         project_id: projectId,
         project_title: projectTitle,
-        start_time: startIso,
-        end_time: endIso,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
         requested_date: date,
-        time_slot: slot
+        time_slot: slot,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
       });
-      setRequestMessage('Meeting request submitted successfully! Admin will assign Google Meet link shortly.');
+      const successMsg = '5-Minute Guidance Meeting requested successfully! Admin will assign Google Meet link shortly.';
+      setRequestMessage(successMsg);
+      onToast?.(successMsg, 'success');
       await refresh();
       form.reset();
-    } catch (requestError) {
+    } catch (requestError: any) {
       if (requestError instanceof VerificationApiError && (requestError.status === 401 || requestError.status === 403)) {
         onSessionExpired();
       } else {
-        setRequestMessage(requestError instanceof Error ? requestError.message : 'Unable to request the meeting.');
+        const errMsg = requestError instanceof Error ? requestError.message : 'Unable to request the meeting.';
+        setRequestMessage(errMsg);
+        onToast?.(errMsg, 'error');
       }
     } finally {
       setSubmitting(false);
@@ -439,119 +418,209 @@ export default function StudentCommercePanel({
               </div>
             )}
 
-            {/* Meeting Booking Form */}
-            {view === 'selected' && selections.length > 0 && (
-              <form onSubmit={submitMeeting} className="mt-6 rounded-xl bg-slate-50 border border-slate-200 p-4 space-y-3 sm:space-y-0 sm:grid sm:grid-cols-[1fr_160px_180px_auto] sm:gap-3 sm:items-end">
-                <label className="block text-xs font-bold text-slate-700">
-                  Selected Project
-                  <select
-                    name="project_id"
-                    required
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-normal"
-                  >
-                    {selections.map((selection) => {
-                      const project = projects.find((item) => Number(item.id) === selection.project_id);
-                      return (
-                        <option key={selection.id} value={selection.project_id}>
-                          {project?.title || `Project #${selection.project_id}`}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
-                <label className="block text-xs font-bold text-slate-700">
-                  Session Date
-                  <input
-                    name="date"
-                    type="date"
-                    min={minimumMeetingDate}
-                    required
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-normal"
-                  />
-                </label>
-                <label className="block text-xs font-bold text-slate-700">
-                  5-Min Time Slot
-                  <select
-                    name="slot"
-                    required
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-normal"
-                  >
-                    {AVAILABLE_TIME_SLOTS.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="submit"
-                  disabled={submitting || activeMeetings.length >= 3}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                >
-                  {submitting ? <LoaderCircle size={14} className="animate-spin" /> : <CalendarDays size={14} />}
-                  Request 5-Min Meet ({activeMeetings.length}/3)
-                </button>
-              </form>
-            )}
+            {/* Meeting Booking Form (Available for Selected Projects & 5-Min Meet Page) */}
+            <div className="mt-6 rounded-2xl bg-gradient-to-r from-slate-50 to-indigo-50/40 border border-indigo-100 p-5 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100/70 pb-3 mb-4">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-indigo-600" />
+                    <span>Request 5-Minute Guidance Meeting</span>
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Pick a project, session date, and 5-min slot to clarify project doubts 1-on-1 on Google Meet.
+                  </p>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-indigo-200 text-indigo-800">
+                  {activeMeetings.length} / 3 Active Meetings
+                </span>
+              </div>
 
-            {view === 'selected' && requestMessage && (
-              <p role="status" className="mt-3 rounded-lg bg-indigo-50 p-3 text-xs font-medium text-indigo-900 border border-indigo-200">
-                {requestMessage}
-              </p>
-            )}
-
-            {/* Meetings List */}
-            <div className="mt-6 space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">
-                {view === 'selected' ? 'Current Scheduled & Requested Meetings' : 'Meeting Sessions'}
-              </h3>
-              {meetings.length === 0 ? (
-                <p className="py-8 text-center text-sm text-slate-500">No guidance meetings are recorded yet.</p>
-              ) : (
-                meetings.map((meeting) => (
-                  <article
-                    key={meeting.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 transition-all hover:border-slate-300"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[10px] text-slate-500">Meeting #{meeting.id}</span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                            meeting.status === 'SCHEDULED'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : meeting.status === 'REJECTED' || meeting.status === 'CANCELLED'
-                              ? 'bg-rose-100 text-rose-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {meetingLabel(meeting.status)}
-                        </span>
-                      </div>
-                      <h4 className="text-sm font-bold text-slate-900">{meeting.project_title}</h4>
-                      <p className="text-xs text-slate-600">
-                        Date: <strong>{meeting.requested_date || new Date(meeting.start_time).toLocaleDateString()}</strong> · Slot: <strong>{meeting.time_slot || new Date(meeting.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> (5 Minutes)
-                      </p>
-                    </div>
-
-                    <div>
-                      {meeting.status === 'SCHEDULED' && meeting.google_meet_url ? (
-                        <a
-                          href={meeting.google_meet_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors"
-                        >
-                          Join Google Meet <ExternalLink size={13} />
-                        </a>
-                      ) : meeting.status === 'PENDING' ? (
-                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5">
-                          <Clock size={13} /> Waiting for Admin to assign Meet Link
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400 font-medium">Session {meeting.status.toLowerCase()}</span>
+              <form onSubmit={submitMeeting} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Select Project <span className="text-rose-500">*</span>
+                    <select
+                      name="project_id"
+                      required
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none"
+                    >
+                      <option value="">-- Choose Project --</option>
+                      {selections.length > 0 && (
+                        <optgroup label="Your Selected Projects">
+                          {selections.map((sel) => {
+                            const proj = projects.find((p) => String(p.id) === String(sel.project_id));
+                            return (
+                              <option key={sel.id} value={sel.project_id}>
+                                {proj?.title || `Project #${sel.project_id}`}
+                              </option>
+                            );
+                          })}
+                        </optgroup>
                       )}
-                    </div>
-                  </article>
-                ))
+                      <optgroup label={selections.length > 0 ? "Other Available Projects" : "Available Projects"}>
+                        {projects
+                          .filter((p) => !selections.some((s) => String(s.project_id) === String(p.id)))
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.title}
+                            </option>
+                          ))}
+                      </optgroup>
+                    </select>
+                  </label>
+
+                  <label className="block text-xs font-bold text-slate-700">
+                    Session Date <span className="text-rose-500">*</span>
+                    <input
+                      name="date"
+                      type="date"
+                      min={minimumMeetingDate}
+                      required
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none"
+                    />
+                  </label>
+
+                  <label className="block text-xs font-bold text-slate-700">
+                    5-Min Time Slot <span className="text-rose-500">*</span>
+                    <select
+                      name="slot"
+                      required
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none"
+                    >
+                      {AVAILABLE_TIME_SLOTS.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                    <Clock size={13} className="text-slate-400" />
+                    Sessions are strictly 5 minutes. Maximum 3 active guidance meetings allowed.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={submitting || activeMeetings.length >= 3}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-extrabold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-md shadow-indigo-600/20"
+                  >
+                    {submitting ? <LoaderCircle size={15} className="animate-spin" /> : <CalendarDays size={15} />}
+                    <span>Request 5-Min Meet</span>
+                  </button>
+                </div>
+              </form>
+
+              {requestMessage && (
+                <p role="status" className="mt-3 rounded-xl bg-white p-3 text-xs font-semibold text-indigo-900 border border-indigo-200 shadow-2xs">
+                  {requestMessage}
+                </p>
+              )}
+            </div>
+
+            {/* Current Scheduled & Requested Meetings List */}
+            <div className="mt-8 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Current Scheduled &amp; Requested Meetings
+                </h3>
+                <span className="text-xs text-slate-500 font-medium">{meetings.length} record{meetings.length === 1 ? '' : 's'}</span>
+              </div>
+
+              {meetings.length === 0 ? (
+                <div className="py-12 text-center text-sm text-slate-500 space-y-2 border border-dashed border-slate-200 rounded-2xl p-6">
+                  <CalendarDays className="mx-auto h-10 w-10 text-slate-300" />
+                  <p className="font-semibold text-slate-700">No guidance meetings scheduled or requested yet.</p>
+                  <p className="text-xs text-slate-400">Select a project above, choose your session date &amp; 5-min slot, and click "Request 5-Min Meet".</p>
+                </div>
+              ) : (
+                meetings.map((meeting) => {
+                  const isScheduled = meeting.status === 'SCHEDULED' || meeting.status === 'APPROVED';
+                  const isPending = meeting.status === 'PENDING' || meeting.status === 'REQUESTED';
+
+                  return (
+                    <article
+                      key={meeting.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:border-slate-300 shadow-sm space-y-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] font-bold text-slate-500">Meeting #{meeting.id}</span>
+                            {isScheduled ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-800">
+                                <CheckCircle2 size={12} /> Scheduled
+                              </span>
+                            ) : isPending ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
+                                <Clock size={12} /> Pending Admin Confirmation
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-700">
+                                {meetingLabel(meeting.status)}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-base font-extrabold text-slate-900">{meeting.project_title}</h4>
+                        </div>
+
+                        <div className="text-right text-xs bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200">
+                          <div className="text-slate-600">
+                            Scheduled Date: <strong className="text-slate-900 font-bold">{meeting.requested_date || (meeting.start_time ? new Date(meeting.start_time).toLocaleDateString('en-IN') : 'TBD')}</strong>
+                          </div>
+                          <div className="text-slate-600 mt-0.5">
+                            Scheduled 5-Min Slot: <strong className="text-indigo-600 font-bold">{meeting.time_slot || (meeting.start_time ? new Date(meeting.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '5-Min Slot')}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Scheduled Meeting with Google Meet URL & Waiting Notice */}
+                      {isScheduled && meeting.google_meet_url ? (
+                        <div className="space-y-3 pt-1">
+                          {/* 10-Minute Waiting Policy Notice Box */}
+                          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 font-medium flex items-start gap-2.5 shadow-2xs">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <p className="leading-relaxed">
+                              <strong className="font-bold text-amber-950">Important:</strong> Please join on time. Once the meeting link is provided/started, the maximum waiting time is 10 minutes.
+                            </p>
+                          </div>
+
+                          {/* Meet Link Display & Prominent Join Button */}
+                          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 border border-slate-200 p-4">
+                            <div className="min-w-0 flex-1">
+                              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Google Meet URL</span>
+                              <a
+                                href={meeting.google_meet_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs font-mono font-bold text-indigo-600 hover:text-indigo-800 underline truncate block mt-0.5"
+                              >
+                                {meeting.google_meet_url}
+                              </a>
+                            </div>
+                            <a
+                              href={meeting.google_meet_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-5 py-2.5 shadow-md shadow-emerald-600/20 transition-all shrink-0"
+                            >
+                              <span>Join 5-Min Google Meet</span>
+                              <ExternalLink size={14} />
+                            </a>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl bg-amber-50/70 border border-amber-200 p-3.5 text-xs text-amber-900 flex items-center gap-2.5">
+                          <Clock size={16} className="text-amber-600 shrink-0" />
+                          <span>
+                            {isPending
+                              ? 'Your meeting request has been submitted. Admin will review the schedule and assign your Google Meet link shortly.'
+                              : `Session status: ${meeting.status.toLowerCase()}`}
+                          </span>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })
               )}
             </div>
           </article>

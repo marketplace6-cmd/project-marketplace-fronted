@@ -34,12 +34,12 @@ export interface MeetingRecordDTO {
   student_id: number | string;
   student_name?: string | null;
   student_email?: string | null;
-  project_id: number;
+  project_id: number | string;
   project_title: string;
-  guide_id: number;
-  start_time: string;
-  end_time: string;
-  timezone: string;
+  guide_id?: number;
+  start_time?: string;
+  end_time?: string;
+  timezone?: string;
   status: string;
   google_meet_url: string | null;
   payment_status?: string | null;
@@ -49,6 +49,20 @@ export interface MeetingRecordDTO {
   created_at: string;
   updated_at?: string;
 }
+
+export const AVAILABLE_TIME_SLOTS = [
+  '10:00 AM - 10:05 AM',
+  '10:30 AM - 10:35 AM',
+  '11:00 AM - 11:05 AM',
+  '11:30 AM - 11:35 AM',
+  '02:00 PM - 02:05 PM',
+  '02:30 PM - 02:35 PM',
+  '03:00 PM - 03:05 PM',
+  '03:30 PM - 03:35 PM',
+  '04:00 PM - 04:05 PM',
+  '04:30 PM - 04:35 PM',
+  '05:00 PM - 05:05 PM'
+];
 
 export interface StudentOrderRecord {
   id: number;
@@ -224,7 +238,7 @@ export const AdminCommerceAPI = {
       }
       const from = (filters.page - 1) * 25;
       const to = from + 24;
-      const { data, count, error } = await sbQuery.order('id', { ascending: false }).range(from, to);
+      const { data, count, error } = await sbQuery.order('created_at', { ascending: false }).range(from, to);
 
       if (!error && Array.isArray(data)) {
         const items: MeetingRecordDTO[] = data.map((d: any) => ({
@@ -232,13 +246,13 @@ export const AdminCommerceAPI = {
           student_id: d.student_id,
           student_name: d.student_name || null,
           student_email: d.student_email || null,
-          project_id: Number(d.project_id),
+          project_id: d.project_id,
           project_title: d.project_title,
           guide_id: Number(d.guide_id || 1),
           start_time: d.start_time,
           end_time: d.end_time,
           timezone: d.timezone || 'Asia/Kolkata',
-          status: d.status,
+          status: d.status || 'PENDING',
           google_meet_url: d.google_meet_url || null,
           payment_status: d.payment_status || null,
           reviewed_at: d.reviewed_at || null,
@@ -260,13 +274,13 @@ export const AdminCommerceAPI = {
    */
   async approveMeeting(
     token: string,
-    meetingId: number,
+    meetingId: number | string,
     url: string,
     scheduleUpdates?: { start_time?: string; end_time?: string; requested_date?: string; time_slot?: string }
   ): Promise<void> {
     const updatePayload: Record<string, any> = {
       status: 'SCHEDULED',
-      google_meet_url: url,
+      google_meet_url: url.trim(),
       reviewed_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -281,7 +295,7 @@ export const AdminCommerceAPI = {
       .eq('id', meetingId);
 
     if (sbErr) {
-      throw new VerificationApiError(`Failed to approve meeting in database: ${sbErr.message}`, 500);
+      throw new VerificationApiError(sbErr.message, 500);
     }
   }
 };
@@ -394,28 +408,41 @@ export const StudentCommerceAPI = {
   /**
    * List Student's meetings directly from Supabase
    */
-  async listMeetings(token?: string, studentIdentifier?: string): Promise<MeetingRecordDTO[]> {
+  async listMeetings(token?: string, studentIdentifier?: string | { studentId?: string; studentEmail?: string }): Promise<MeetingRecordDTO[]> {
     try {
       let sbQuery = supabase.from('meetings').select('*');
-      if (studentIdentifier) {
+      if (typeof studentIdentifier === 'object' && studentIdentifier !== null) {
+        const parts: string[] = [];
+        if (studentIdentifier.studentId && studentIdentifier.studentId !== 'STU-000-000') {
+          parts.push(`student_id.eq.${studentIdentifier.studentId.trim()}`);
+        }
+        if (studentIdentifier.studentEmail) {
+          parts.push(`student_email.ilike.${studentIdentifier.studentEmail.trim()}`);
+        }
+        if (parts.length > 0) {
+          sbQuery = sbQuery.or(parts.join(','));
+        }
+      } else if (typeof studentIdentifier === 'string' && studentIdentifier.trim()) {
         const clean = studentIdentifier.trim();
-        sbQuery = sbQuery.or(`student_id.eq.${clean},student_email.ilike.${clean}`);
+        if (clean !== 'STU-000-000') {
+          sbQuery = sbQuery.or(`student_id.eq.${clean},student_email.ilike.${clean}`);
+        }
       }
       const { data, error } = await sbQuery.order('created_at', { ascending: false });
 
       if (!error && Array.isArray(data)) {
         return data.map((d: any) => ({
           id: Number(d.id),
-          student_id: d.student_id,
+          student_id: String(d.student_id),
           student_name: d.student_name || null,
           student_email: d.student_email || null,
-          project_id: Number(d.project_id),
+          project_id: d.project_id,
           project_title: d.project_title,
           guide_id: Number(d.guide_id || 1),
-          start_time: d.start_time,
-          end_time: d.end_time,
+          start_time: d.start_time || '',
+          end_time: d.end_time || '',
           timezone: d.timezone || 'Asia/Kolkata',
-          status: d.status,
+          status: d.status || 'PENDING',
           google_meet_url: d.google_meet_url || null,
           payment_status: d.payment_status || null,
           reviewed_at: d.reviewed_at || null,
@@ -438,40 +465,70 @@ export const StudentCommerceAPI = {
     student_id: string | number;
     student_name: string;
     student_email: string;
-    project_id: number;
+    project_id: string | number;
     project_title: string;
-    start_time: string;
-    end_time: string;
+    requested_date: string;
+    time_slot: string;
+    start_time?: string;
+    end_time?: string;
     timezone?: string;
-    requested_date?: string;
-    time_slot?: string;
   }): Promise<MeetingRecordDTO> {
-    // 1. Enforce max 3 active meetings
-    const cleanId = String(meetingPayload.student_id);
-    const cleanEmail = meetingPayload.student_email || '';
-    const { data: activeMeetings } = await supabase
-      .from('meetings')
-      .select('id, status')
-      .or(`student_id.eq.${cleanId}${cleanEmail ? `,student_email.ilike.${cleanEmail}` : ''}`)
-      .not('status', 'in', '("CANCELLED","REJECTED")');
+    const cleanId = String(meetingPayload.student_id || '').trim();
+    const cleanEmail = String(meetingPayload.student_email || '').trim();
 
-    if (activeMeetings && activeMeetings.length >= 3) {
-      throw new VerificationApiError('Maximum limit reached: You can have at most 3 guidance meetings.', 400);
+    // 1. Enforce max 3 active meetings
+    const orParts: string[] = [];
+    if (cleanId && cleanId !== 'STU-000-000') orParts.push(`student_id.eq.${cleanId}`);
+    if (cleanEmail) orParts.push(`student_email.ilike.${cleanEmail}`);
+
+    if (orParts.length > 0) {
+      const { data: activeMeetings, error: countErr } = await supabase
+        .from('meetings')
+        .select('id, status')
+        .or(orParts.join(','))
+        .not('status', 'in', '("CANCELLED","REJECTED")');
+
+      if (!countErr && activeMeetings && activeMeetings.length >= 3) {
+        throw new VerificationApiError('Maximum limit reached: You can have at most 3 active guidance meetings.', 400);
+      }
+    }
+
+    // Compute start_time & end_time ISO from requested_date and time_slot
+    let startIso = meetingPayload.start_time;
+    let endIso = meetingPayload.end_time;
+    if (!startIso && meetingPayload.requested_date && meetingPayload.time_slot) {
+      try {
+        const match = meetingPayload.time_slot.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const meridian = match[3].toUpperCase();
+          if (meridian === 'PM' && hours < 12) hours += 12;
+          if (meridian === 'AM' && hours === 12) hours = 0;
+          const s = new Date(`${meetingPayload.requested_date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
+          const e = new Date(s.getTime() + 5 * 60_000);
+          startIso = s.toISOString();
+          endIso = e.toISOString();
+        }
+      } catch {
+        startIso = new Date().toISOString();
+        endIso = new Date(Date.now() + 5 * 60_000).toISOString();
+      }
     }
 
     const record = {
-      student_id: meetingPayload.student_id,
+      student_id: String(meetingPayload.student_id),
       student_name: meetingPayload.student_name,
       student_email: meetingPayload.student_email,
-      project_id: meetingPayload.project_id,
+      project_id: String(meetingPayload.project_id),
       project_title: meetingPayload.project_title,
-      guide_id: 1,
-      start_time: meetingPayload.start_time,
-      end_time: meetingPayload.end_time,
-      timezone: meetingPayload.timezone || 'Asia/Kolkata',
-      requested_date: meetingPayload.requested_date || null,
-      time_slot: meetingPayload.time_slot || null,
+      requested_date: meetingPayload.requested_date,
+      time_slot: meetingPayload.time_slot,
       status: 'PENDING',
+      guide_id: 1,
+      start_time: startIso || new Date().toISOString(),
+      end_time: endIso || new Date(Date.now() + 5 * 60_000).toISOString(),
+      timezone: meetingPayload.timezone || 'Asia/Kolkata',
       google_meet_url: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -484,7 +541,7 @@ export const StudentCommerceAPI = {
       .single();
 
     if (error) {
-      throw new VerificationApiError(`Failed to request meeting in database: ${error.message}`, 500);
+      throw new VerificationApiError(error.message, 500);
     }
 
     return {
@@ -492,9 +549,9 @@ export const StudentCommerceAPI = {
       student_id: data.student_id,
       student_name: data.student_name,
       student_email: data.student_email,
-      project_id: Number(data.project_id),
+      project_id: data.project_id,
       project_title: data.project_title,
-      guide_id: Number(data.guide_id),
+      guide_id: Number(data.guide_id || 1),
       start_time: data.start_time,
       end_time: data.end_time,
       timezone: data.timezone,

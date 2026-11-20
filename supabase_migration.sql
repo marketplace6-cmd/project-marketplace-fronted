@@ -139,5 +139,65 @@ CREATE POLICY "Allow public delete on verifications"
 GRANT ALL ON TABLE public.verifications TO anon, authenticated, service_role;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 
+-- -----------------------------------------------------------------------------
+-- 5-Minute Guidance Meetings Table & Row Level Security (RLS) Policies
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.meetings (
+  id BIGSERIAL PRIMARY KEY,
+  student_id TEXT NOT NULL,
+  student_name TEXT,
+  student_email TEXT,
+  project_id TEXT NOT NULL,
+  project_title TEXT NOT NULL,
+  guide_id INTEGER DEFAULT 1,
+  start_time TIMESTAMPTZ,
+  end_time TIMESTAMPTZ,
+  timezone TEXT DEFAULT 'Asia/Kolkata',
+  requested_date TEXT,
+  time_slot TEXT,
+  status TEXT DEFAULT 'PENDING',
+  google_meet_url TEXT,
+  payment_status TEXT,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_meetings_student_id ON public.meetings(student_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_student_email ON public.meetings(student_email);
+CREATE INDEX IF NOT EXISTS idx_meetings_status ON public.meetings(status);
+CREATE INDEX IF NOT EXISTS idx_meetings_created_at ON public.meetings(created_at DESC);
+
+ALTER TABLE public.meetings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public insert on meetings" ON public.meetings;
+DROP POLICY IF EXISTS "Allow public select on meetings" ON public.meetings;
+DROP POLICY IF EXISTS "Allow public update on meetings" ON public.meetings;
+DROP POLICY IF EXISTS "Allow public delete on meetings" ON public.meetings;
+
+CREATE POLICY "Allow public insert on meetings" 
+  ON public.meetings FOR INSERT 
+  TO anon, authenticated 
+  WITH CHECK (true);
+
+CREATE POLICY "Allow public select on meetings" 
+  ON public.meetings FOR SELECT 
+  TO anon, authenticated 
+  USING (true);
+
+CREATE POLICY "Allow public update on meetings" 
+  ON public.meetings FOR UPDATE 
+  TO anon, authenticated 
+  USING (true) 
+  WITH CHECK (true);
+
+CREATE POLICY "Allow public delete on meetings" 
+  ON public.meetings FOR DELETE 
+  TO anon, authenticated 
+  USING (true);
+
+GRANT ALL ON TABLE public.meetings TO anon, authenticated, service_role;
+
+
 
 

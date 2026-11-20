@@ -23,6 +23,7 @@ import {
 import {
   AdminCommerceAPI,
   AdminOrderRecord,
+  AVAILABLE_TIME_SLOTS,
   CommercePage,
   MeetingRecordDTO
 } from '../commerceService';
@@ -89,7 +90,7 @@ export default function AdminMeetingsOrdersPage({
   const [approvalMeeting, setApprovalMeeting] = useState<MeetingRecordDTO | null>(null);
   const [meetUrl, setMeetUrl] = useState('');
   const [scheduledDate, setScheduledDate] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
+  const [scheduledTimeSlot, setScheduledTimeSlot] = useState('');
   const [modalError, setModalError] = useState('');
   const [savingMeeting, setSavingMeeting] = useState(false);
 
@@ -145,22 +146,16 @@ export default function AdminMeetingsOrdersPage({
     callback();
   };
 
-  // Open meeting approval modal
+  // Open meeting approval & reschedule modal
   const openMeetingModal = (meeting: MeetingRecordDTO) => {
     setApprovalMeeting(meeting);
     setMeetUrl(meeting.google_meet_url || '');
     setModalError('');
-    try {
-      const d = meeting.start_time ? new Date(meeting.start_time) : new Date();
-      setScheduledDate(d.toISOString().slice(0, 10));
-      setScheduledTime(d.toTimeString().slice(0, 5));
-    } catch {
-      setScheduledDate('');
-      setScheduledTime('');
-    }
+    setScheduledDate(meeting.requested_date || (meeting.start_time ? meeting.start_time.slice(0, 10) : new Date().toISOString().slice(0, 10)));
+    setScheduledTimeSlot(meeting.time_slot || '10:00 AM - 10:05 AM');
   };
 
-  // Approve Meeting & Attach Link
+  // Schedule / Modify & Save Google Meet Link
   const handleApproveMeeting = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!approvalMeeting) return;
@@ -173,26 +168,37 @@ export default function AdminMeetingsOrdersPage({
     try {
       let startIso: string | undefined;
       let endIso: string | undefined;
-      if (scheduledDate && scheduledTime) {
-        const start = new Date(`${scheduledDate}T${scheduledTime}:00`);
-        startIso = start.toISOString();
-        endIso = new Date(start.getTime() + 5 * 60_000).toISOString();
+      if (scheduledDate && scheduledTimeSlot) {
+        try {
+          const match = scheduledTimeSlot.match(/(\d+):(\d+)\s*(AM|PM)/i);
+          if (match) {
+            let hours = parseInt(match[1], 10);
+            const minutes = parseInt(match[2], 10);
+            const meridian = match[3].toUpperCase();
+            if (meridian === 'PM' && hours < 12) hours += 12;
+            if (meridian === 'AM' && hours === 12) hours = 0;
+            const s = new Date(`${scheduledDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
+            const e = new Date(s.getTime() + 5 * 60_000);
+            startIso = s.toISOString();
+            endIso = e.toISOString();
+          }
+        } catch { /* fallback */ }
       }
 
       await AdminCommerceAPI.approveMeeting(accessToken, approvalMeeting.id, meetUrl.trim(), {
         start_time: startIso,
         end_time: endIso,
         requested_date: scheduledDate,
-        time_slot: scheduledTime
+        time_slot: scheduledTimeSlot
       });
 
       setApprovalMeeting(null);
       setMeetUrl('');
-      setNotice(`Meeting #${approvalMeeting.id} scheduled with Google Meet link!`);
+      setNotice(`Meeting #${approvalMeeting.id} updated! Google Meet link saved and shared with student.`);
       await refresh();
       onChanged();
     } catch (requestError) {
-      setModalError(requestError instanceof Error ? requestError.message : 'Unable to approve meeting.');
+      setModalError(requestError instanceof Error ? requestError.message : 'Unable to save and share meeting link.');
     } finally {
       setSavingMeeting(false);
     }
@@ -480,7 +486,7 @@ export default function AdminMeetingsOrdersPage({
             <table className="w-full min-w-[1100px] text-left text-xs">
               <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
                 <tr>
-                  {['Meeting ID', 'Student Name', 'Student ID', 'Project Title', 'Requested Date & Slot', 'Status', 'Google Meet Link', 'Action'].map((head) => (
+                  {['Meeting ID', 'Student Name', 'Email', 'Project Title', 'Requested Date', 'Requested Time Slot', 'Status', 'Google Meet Link', 'Action'].map((head) => (
                     <th key={head} className="border-b border-slate-200 px-3.5 py-3 font-bold">{head}</th>
                   ))}
                 </tr>
@@ -488,36 +494,33 @@ export default function AdminMeetingsOrdersPage({
               <tbody className="divide-y divide-slate-100">
                 {meetings.items.map((meeting) => {
                   const isPending = ['PENDING', 'REQUESTED', 'RESCHEDULE_REQUESTED', 'Request Submitted'].includes(meeting.status);
+                  const isScheduled = meeting.status === 'SCHEDULED' || meeting.status === 'APPROVED';
+
                   return (
                     <tr key={meeting.id} className="text-slate-700 hover:bg-slate-50/70 transition-colors">
                       <td className="px-3.5 py-3 font-mono font-bold text-slate-900">#{meeting.id}</td>
                       <td className="px-3.5 py-3">
                         <div className="font-bold text-slate-900">{meeting.student_name || 'Student'}</div>
-                        {meeting.student_email && <div className="text-[10px] text-slate-400">{meeting.student_email}</div>}
+                        <div className="text-[10px] font-mono text-slate-400">ID: {meeting.student_id}</div>
                       </td>
-                      <td className="px-3.5 py-3 font-mono font-medium">{meeting.student_id}</td>
-                      <td className="px-3.5 py-3 font-semibold text-slate-900">{meeting.project_title}</td>
-                      <td className="whitespace-nowrap px-3.5 py-3">
-                        {meeting.requested_date ? (
-                          <div>
-                            <span className="font-semibold text-slate-900">{meeting.requested_date}</span>
-                            <span className="block text-[10px] text-indigo-600 font-mono font-bold">{meeting.time_slot || '5-Min Slot'}</span>
-                          </div>
-                        ) : (
-                          <div>
-                            <span>{new Date(meeting.start_time).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                            <span className="block text-[10px] text-slate-400">({meeting.timezone})</span>
-                          </div>
-                        )}
+                      <td className="px-3.5 py-3 font-medium text-slate-600">
+                        {meeting.student_email || '—'}
+                      </td>
+                      <td className="px-3.5 py-3 font-semibold text-slate-900 max-w-xs">{meeting.project_title}</td>
+                      <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-slate-900">
+                        {meeting.requested_date || (meeting.start_time ? new Date(meeting.start_time).toLocaleDateString('en-IN') : 'TBD')}
+                      </td>
+                      <td className="whitespace-nowrap px-3.5 py-3 font-mono font-bold text-indigo-700">
+                        {meeting.time_slot || (meeting.start_time ? new Date(meeting.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '5-Min Slot')}
                       </td>
                       <td className="px-3.5 py-3">
                         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold border ${meetingStatusClass(meeting.status)}`}>
                           {isPending && <Clock size={10} />}
-                          {niceStatus(meeting.status)}
+                          {isScheduled ? 'Scheduled' : isPending ? 'Pending Admin Confirmation' : niceStatus(meeting.status)}
                         </span>
                       </td>
                       <td className="max-w-48 truncate px-3.5 py-3">
-                        {meeting.status === 'SCHEDULED' && meeting.google_meet_url ? (
+                        {isScheduled && meeting.google_meet_url ? (
                           <a
                             href={meeting.google_meet_url}
                             target="_blank"
@@ -540,7 +543,7 @@ export default function AdminMeetingsOrdersPage({
                               : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
                         >
-                          {meeting.google_meet_url ? 'Update Link' : 'Approve & Attach Link'}
+                          Schedule / Modify &amp; Add Meet Link
                         </button>
                       </td>
                     </tr>
@@ -583,7 +586,7 @@ export default function AdminMeetingsOrdersPage({
         </div>
       )}
 
-      {/* MODAL 1: Meeting Approval & Google Meet Link Attachment */}
+      {/* MODAL 1: Schedule / Modify & Add Meet Link */}
       {approvalMeeting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
           <form
@@ -595,9 +598,9 @@ export default function AdminMeetingsOrdersPage({
             <header className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Guidance Session Schedule</span>
-                <h3 className="text-lg font-black text-slate-900 mt-0.5">Approve &amp; Attach Google Meet Link</h3>
+                <h3 className="text-lg font-black text-slate-900 mt-0.5">Schedule / Modify &amp; Add Meet Link</h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  Meeting #{approvalMeeting.id} · {approvalMeeting.student_name || 'Student'} · {approvalMeeting.project_title}
+                  Meeting #{approvalMeeting.id} · <span className="font-semibold text-slate-700">{approvalMeeting.student_name || 'Student'}</span> ({approvalMeeting.student_email || 'No email'}) · <span className="font-semibold text-slate-700">{approvalMeeting.project_title}</span>
                 </p>
               </div>
               <button
@@ -609,32 +612,44 @@ export default function AdminMeetingsOrdersPage({
               </button>
             </header>
 
-            {/* Date & Time Slot Adjustment */}
+            {/* Session Date & 5-Min Time Slot Modification */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Scheduled Date</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Session Date <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="date"
                   value={scheduledDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-indigo-600 outline-none"
+                  required
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-900 focus:border-indigo-600 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Start Time (5-Min Duration)</label>
-                <input
-                  type="time"
-                  value={scheduledTime}
-                  onChange={(e) => setScheduledTime(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:border-indigo-600 outline-none"
-                />
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  5-Min Time Slot <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={scheduledTimeSlot}
+                  onChange={(e) => setScheduledTimeSlot(e.target.value)}
+                  required
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-900 focus:border-indigo-600 outline-none"
+                >
+                  {AVAILABLE_TIME_SLOTS.map((slot) => (
+                    <option key={slot} value={slot}>{slot}</option>
+                  ))}
+                  {scheduledTimeSlot && !AVAILABLE_TIME_SLOTS.includes(scheduledTimeSlot) && (
+                    <option value={scheduledTimeSlot}>{scheduledTimeSlot}</option>
+                  )}
+                </select>
               </div>
             </div>
 
             {/* Google Meet Link Input */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Authorized Google Meet URL <span className="text-rose-500">*</span>
+                Google Meet Link <span className="text-rose-500">*</span>
               </label>
               <input
                 autoFocus
@@ -649,7 +664,7 @@ export default function AdminMeetingsOrdersPage({
                 className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none"
               />
               <span className="mt-1 block text-[11px] text-slate-500">
-                Only valid HTTPS links on <strong className="font-mono text-slate-700">meet.google.com</strong> are accepted.
+                Paste the clean Google Meet URL (e.g. <strong className="font-mono text-slate-700">https://meet.google.com/abc-defg-hij</strong>).
               </span>
             </div>
 
@@ -674,7 +689,7 @@ export default function AdminMeetingsOrdersPage({
                 className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-extrabold text-white hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-sm"
               >
                 {savingMeeting && <LoaderCircle size={15} className="animate-spin" />}
-                <span>{savingMeeting ? 'Attaching Link…' : 'Approve & Save Link'}</span>
+                <span>{savingMeeting ? 'Saving & Sharing…' : 'Save & Share Meet Link'}</span>
               </button>
             </footer>
           </form>

@@ -651,6 +651,50 @@ export default function App() {
     setStudent((previous) => ({ ...previous, selectedProjectIds: projectIds }));
   }, []);
 
+  const handleMeetingsLoaded = useCallback((loadedMeetings: any[]) => {
+    const mapped: MeetingRecord[] = loadedMeetings.map((m) => ({
+      id: String(m.id),
+      projectId: String(m.project_id),
+      projectTitle: m.project_title,
+      date: m.requested_date || (m.start_time ? new Date(m.start_time).toISOString().slice(0, 10) : ''),
+      timeSlot: m.time_slot || '5-Min Slot',
+      durationMinutes: 5,
+      status: m.status as any,
+      meetLink: m.google_meet_url || undefined
+    }));
+    setMeetings(mapped);
+  }, []);
+
+  useEffect(() => {
+    const studentIdentifier = student.id || student.email;
+    if (!studentIdentifier || studentIdentifier === 'STU-000-000') return;
+    let active = true;
+    void StudentCommerceAPI.listMeetings(student.accessToken, {
+      studentId: student.id,
+      studentEmail: student.email
+    })
+      .then((liveMeetings) => {
+        if (!active) return;
+        const mapped: MeetingRecord[] = liveMeetings.map((m) => ({
+          id: String(m.id),
+          projectId: String(m.project_id),
+          projectTitle: m.project_title,
+          date: m.requested_date || (m.start_time ? new Date(m.start_time).toISOString().slice(0, 10) : ''),
+          timeSlot: m.time_slot || '5-Min Slot',
+          durationMinutes: 5,
+          status: m.status as any,
+          meetLink: m.google_meet_url || undefined
+        }));
+        setMeetings(mapped);
+      })
+      .catch((err) => {
+        console.warn('Could not load student meetings for overview dashboard:', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [student.id, student.email, student.accessToken]);
+
   useEffect(() => {
     if (!student.accessToken) return;
     let active = true;
@@ -2239,6 +2283,8 @@ export default function App() {
           onToggleSelection={handleToggleSelectProject}
           onSessionExpired={handleStudentSessionExpired}
           onLogin={() => navigate('login')}
+          onToast={(msg, type) => showToast(msg, type)}
+          onMeetingsLoaded={handleMeetingsLoaded}
         />
       </div>
     );
@@ -2835,6 +2881,8 @@ export default function App() {
               projects={projects}
               onSessionExpired={handleStudentSessionExpired}
               onLogin={() => navigate('login')}
+              onToast={(msg, type) => showToast(msg, type)}
+              onMeetingsLoaded={handleMeetingsLoaded}
             />
           )}
 
@@ -2850,6 +2898,7 @@ export default function App() {
               projects={projects}
               onSessionExpired={handleStudentSessionExpired}
               onLogin={() => navigate('login')}
+              onToast={(msg, type) => showToast(msg, type)}
             />
           )}
 

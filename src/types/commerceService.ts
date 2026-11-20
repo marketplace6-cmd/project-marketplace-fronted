@@ -345,10 +345,10 @@ export const StudentCommerceAPI = {
    */
   async submitOrderPayment(orderPayload: {
     user_id: string | number;
-    student_id: string;
+    student_id: string | number;
     student_name: string;
     student_email: string;
-    project_id: number;
+    project_id: number | string;
     project_title: string;
     amount: number;
     utr_number: string;
@@ -356,11 +356,11 @@ export const StudentCommerceAPI = {
     invoice_number: string;
   }): Promise<StudentOrderRecord> {
     const record = {
-      user_id: orderPayload.user_id,
-      student_id: orderPayload.student_id,
+      user_id: orderPayload.user_id ? String(orderPayload.user_id) : null,
+      student_id: String(orderPayload.student_id),
       student_name: orderPayload.student_name,
       student_email: orderPayload.student_email,
-      project_id: orderPayload.project_id,
+      project_id: String(orderPayload.project_id),
       project_title: orderPayload.project_title,
       amount: orderPayload.amount,
       currency: 'INR',

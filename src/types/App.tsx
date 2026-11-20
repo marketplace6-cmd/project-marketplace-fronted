@@ -2386,17 +2386,28 @@ export default function App() {
         <StudentCommercePanel
           view={currentRoute === 'selected-projects' ? 'selected' : 'meetings'}
           accessToken={student.accessToken}
-          studentId={student.id}
+          studentId={String(student.id)}
           studentEmail={student.email}
           studentName={student.fullName}
           projects={projects}
           viewedProjectIds={student.viewedProjectIds}
+          selectedProjectIds={student.selectedProjectIds}
           onSelectionChange={handleStudentSelectionsLoaded}
           onToggleSelection={handleToggleSelectProject}
           onSessionExpired={handleStudentSessionExpired}
           onLogin={() => navigate('login')}
           onToast={(msg, type) => showToast(msg, type)}
           onMeetingsLoaded={handleMeetingsLoaded}
+          onNavigate={(page) => navigate(page as PageRoute)}
+          onProceedToBuy={(projectId) => {
+            setCheckoutProjectId(String(projectId));
+            setCheckoutOrder(null);
+            setCheckoutUtr('');
+            setCheckoutScreenshotFile(null);
+            setCheckoutScreenshotPreview('');
+            setCheckoutScreenshotError('');
+            navigate('checkout');
+          }}
         />
       </div>
     );
@@ -2987,14 +2998,27 @@ export default function App() {
             <StudentCommercePanel
               view="meetings"
               accessToken={student.accessToken}
-              studentId={student.id}
+              studentId={String(student.id)}
               studentEmail={student.email}
               studentName={student.fullName}
               projects={projects}
+              selectedProjectIds={student.selectedProjectIds}
+              onSelectionChange={handleStudentSelectionsLoaded}
+              onToggleSelection={handleToggleSelectProject}
               onSessionExpired={handleStudentSessionExpired}
               onLogin={() => navigate('login')}
               onToast={(msg, type) => showToast(msg, type)}
               onMeetingsLoaded={handleMeetingsLoaded}
+              onNavigate={(page) => navigate(page as PageRoute)}
+              onProceedToBuy={(projectId) => {
+                setCheckoutProjectId(String(projectId));
+                setCheckoutOrder(null);
+                setCheckoutUtr('');
+                setCheckoutScreenshotFile(null);
+                setCheckoutScreenshotPreview('');
+                setCheckoutScreenshotError('');
+                navigate('checkout');
+              }}
             />
           )}
 
@@ -3122,11 +3146,11 @@ export default function App() {
         const projectIdNum = Number(checkoutProject.id) || 1;
 
         const order = await StudentCommerceAPI.submitOrderPayment({
-          user_id: student.id || student.email || 'student',
-          student_id: student.id || 'STU-VERIFIED',
+          user_id: String(student.id || student.email || 'student'),
+          student_id: String(student.id || 'STU-VERIFIED'),
           student_name: student.fullName || 'Verified Student',
           student_email: student.email || '',
-          project_id: projectIdNum,
+          project_id: String(checkoutProject.id),
           project_title: checkoutProject.title,
           amount: checkoutProject.price,
           utr_number: cleanUtr,

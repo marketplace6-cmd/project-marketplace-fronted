@@ -462,7 +462,7 @@ export default function StudentCommercePanel({
                             onClick={() => onNavigate?.('schedule-meet')}
                             className="flex-1 py-2.5 px-3 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 shadow-xs"
                           >
-                            <CalendarDays className="w-3.5 h-3.5" /> Schedule 5-Min Meet &rarr;
+                            <CalendarDays className="w-3.5 h-3.5" /> Book 5-Min Meet &rarr;
                           </button>
                           <button
                             type="button"
@@ -479,9 +479,9 @@ export default function StudentCommercePanel({
                             await onToggleSelection?.(project.id);
                             await refresh();
                           }}
-                          className="w-full py-1.5 text-center text-xs font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors"
+                          className="w-full py-1.5 text-center text-xs font-semibold text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors flex items-center justify-center gap-1"
                         >
-                          Remove from Selected
+                          <X className="w-3.5 h-3.5" /> Remove
                         </button>
                       </div>
                     </article>

@@ -29,6 +29,8 @@ import StudentLogin from './StudentLogin';
 import StudentSignup from './StudentSignup';
 import ProfilePage from './ProfilePage';
 import { matchSupportAutoReply, SUPPORT_OFFICIAL_EMAIL, SUPPORT_PRESET_QUESTIONS, getPresetAnswer } from './supportService';
+import TransparentBrandLogo from './TransparentBrandLogo';
+import UnikartLoader from './UnikartLoader';
 
 type PageRoute =
   | 'home'
@@ -307,6 +309,36 @@ export default function App() {
   });
   const [latestSubmittedTicket, setLatestSubmittedTicket] = useState<SupportTicket | null>(null);
   const [selectedSupportQId, setSelectedSupportQId] = useState<string>('id-verification');
+  const [appBootLoading, setAppBootLoading] = useState(true);
+  const [pageTransitionLoading, setPageTransitionLoading] = useState(false);
+  const [transitionTarget, setTransitionTarget] = useState<string>('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppBootLoading(false);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const getRouteLabel = (route: string) => {
+    switch (route) {
+      case 'home': return 'Home';
+      case 'explore': return 'Explore Projects';
+      case 'project-details': return 'Project Details';
+      case 'ppt-preview': return 'PPT Preview';
+      case 'selected-projects': return 'Selected Projects';
+      case 'schedule-meet': return '5-Minute Guidance Meeting';
+      case 'checkout': return 'Checkout';
+      case 'dashboard': return 'Student Profile';
+      case 'referrals': return 'Referral Network & Team';
+      case 'support': return 'Customer Support';
+      case 'login': return 'Student Login';
+      case 'signup': return 'Student Registration';
+      case 'admin':
+      case 'admin-login': return 'Admin Workspace';
+      default: return 'Page';
+    }
+  };
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shareEarnModalOpen, setShareEarnModalOpen] = useState(false);
@@ -625,9 +657,18 @@ export default function App() {
   };
 
   const navigate = (route: PageRoute) => {
-    setCurrentRoute(route);
+    if (route !== currentRoute) {
+      setPageTransitionLoading(true);
+      setTransitionTarget(route);
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      setTimeout(() => {
+        setCurrentRoute(route);
+        setPageTransitionLoading(false);
+      }, 140);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     setMobileMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAdminSessionExpired = useCallback(() => {
@@ -1464,7 +1505,9 @@ export default function App() {
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {catalogueLoading ? (
-              <p className="col-span-full rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading live catalogue…</p>
+              <div className="col-span-full rounded-xl border border-slate-200 bg-white p-8">
+                <UnikartLoader message="Loading live catalogue from database…" size="md" />
+              </div>
             ) : catalogueError ? (
               <div role="alert" className="col-span-full rounded-xl border border-rose-200 bg-rose-50 p-6 text-center text-sm text-rose-800">
                 {catalogueError}
@@ -1640,7 +1683,9 @@ export default function App() {
         </div>
 
         {catalogueLoading ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">Loading live catalogue…</div>
+          <div className="rounded-xl border border-slate-200 bg-white p-12">
+            <UnikartLoader message="Loading live catalogue from database…" size="md" />
+          </div>
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
             <Search className="w-10 h-10 text-slate-400 mx-auto mb-3" />
@@ -2250,6 +2295,9 @@ export default function App() {
   const renderAdminLoginPage = () => (
     <div className="max-w-md mx-auto py-12 px-4">
       <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+        <div className="flex justify-center mb-1">
+          <TransparentBrandLogo className="h-14 w-auto object-contain" alt="Unikart Administration" />
+        </div>
         <div>
           <span className="text-xs font-mono uppercase text-indigo-600">Restricted access</span>
           <h1 className="text-xl font-bold text-slate-900 mt-1">Admin Login</h1>
@@ -2585,6 +2633,12 @@ export default function App() {
       <div className="grid lg:grid-cols-12 gap-6">
         <div className="lg:col-span-3 bg-indigo-950 text-white rounded-2xl p-5 flex flex-col justify-between">
           <div className="space-y-6">
+            {/* Unikart Brand Logo */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <TransparentBrandLogo className="h-9 w-auto object-contain" alt="Unikart" />
+              <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full">STUDENT</span>
+            </div>
+
             {/* User Identity Section (Avatar, Name, Student ID, AK Referral Code, Status Badge) */}
             <div className="pb-4 border-b border-white/10 space-y-3">
               <div className="flex items-center gap-3">
@@ -3928,6 +3982,14 @@ export default function App() {
     </div>
   );
 
+  if (appBootLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <UnikartLoader message="Initializing Unikart..." size="lg" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Toast Notification Banner */}
@@ -4082,16 +4144,8 @@ export default function App() {
             <div className="space-y-6">
               {/* Drawer Header & Branding */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <button onClick={() => navigate('home')} className="flex items-center gap-2.5 text-left">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-extrabold text-lg shadow-sm">
-                    U
-                  </div>
-                  <div>
-                    <span className="font-extrabold text-base tracking-tight text-slate-900">Unikart</span>
-                    <span className="block text-[10px] font-mono text-emerald-600 font-semibold -mt-1">
-                      VERIFIED STUDENT MARKETPLACE
-                    </span>
-                  </div>
+                <button onClick={() => navigate('home')} className="flex items-center gap-2 text-left">
+                  <TransparentBrandLogo className="h-10 w-auto object-contain" alt="Unikart" />
                 </button>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
@@ -4253,15 +4307,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate('home')} className="flex items-center gap-2 text-left">
-              <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-extrabold text-lg shadow-sm">
-                U
-              </div>
-              <div>
-                <span className="font-extrabold text-base tracking-tight text-slate-900">Unikart</span>
-                <span className="block text-[10px] font-mono text-emerald-600 font-semibold -mt-1">
-                  VERIFIED STUDENT MARKETPLACE
-                </span>
-              </div>
+              <TransparentBrandLogo className="h-10 sm:h-11 w-auto object-contain" alt="Unikart" />
             </button>
 
             <nav className="hidden md:flex items-center gap-5 text-xs font-bold text-slate-600 ml-4">
@@ -4334,38 +4380,46 @@ export default function App() {
 
       {/* Main Content Router */}
       <main className="flex-1">
-        {currentRoute === 'home' && renderHomePage()}
-        {currentRoute === 'explore' && renderExplorePage()}
-        {currentRoute === 'project-details' && renderProjectDetailsPage()}
-        {currentRoute === 'ppt-preview' && renderPptPreviewPage()}
-        {currentRoute === 'how-it-works' && renderHomePage()}
-        {currentRoute === 'login' && renderAuthAndVerificationPage('login')}
-        {currentRoute === 'signup' && renderAuthAndVerificationPage('signup')}
-        {currentRoute === 'admin-login' && renderAdminLoginPage()}
-        {currentRoute === 'admin-change-password' && (
-          adminSession?.mustChangePassword ? renderAdminChangePasswordPage() : renderAdminLoginPage()
+        {pageTransitionLoading ? (
+          <div className="min-h-[60vh] flex items-center justify-center p-8">
+            <UnikartLoader message={`Loading ${getRouteLabel(transitionTarget)}...`} size="lg" />
+          </div>
+        ) : (
+          <>
+            {currentRoute === 'home' && renderHomePage()}
+            {currentRoute === 'explore' && renderExplorePage()}
+            {currentRoute === 'project-details' && renderProjectDetailsPage()}
+            {currentRoute === 'ppt-preview' && renderPptPreviewPage()}
+            {currentRoute === 'how-it-works' && renderHomePage()}
+            {currentRoute === 'login' && renderAuthAndVerificationPage('login')}
+            {currentRoute === 'signup' && renderAuthAndVerificationPage('signup')}
+            {currentRoute === 'admin-login' && renderAdminLoginPage()}
+            {currentRoute === 'admin-change-password' && (
+              adminSession?.mustChangePassword ? renderAdminChangePasswordPage() : renderAdminLoginPage()
+            )}
+            {currentRoute === 'verification' && renderAuthAndVerificationPage('verification')}
+            {currentRoute === 'selected-projects' && renderSelectedProjectsPage()}
+            {currentRoute === 'schedule-meet' && renderScheduleMeetPage()}
+            {currentRoute === 'dashboard' && renderStudentDashboard()}
+            {currentRoute === 'referrals' && (
+              <div className="max-w-5xl mx-auto py-10 px-4">{renderReferralSection()}</div>
+            )}
+            {currentRoute === 'checkout' && renderCheckoutPage()}
+            {currentRoute === 'support' && renderSupportSection()}
+            {currentRoute === 'privacy' && renderLegalPage('privacy')}
+            {currentRoute === 'terms' && renderLegalPage('terms')}
+            {currentRoute === 'refund' && renderLegalPage('refund')}
+            {currentRoute === 'admin' && renderAdminPanel()}
+            {currentRoute === 'mentor' && renderAdminPanel('mentor')}
+          </>
         )}
-        {currentRoute === 'verification' && renderAuthAndVerificationPage('verification')}
-        {currentRoute === 'selected-projects' && renderSelectedProjectsPage()}
-        {currentRoute === 'schedule-meet' && renderScheduleMeetPage()}
-        {currentRoute === 'dashboard' && renderStudentDashboard()}
-        {currentRoute === 'referrals' && (
-          <div className="max-w-5xl mx-auto py-10 px-4">{renderReferralSection()}</div>
-        )}
-        {currentRoute === 'checkout' && renderCheckoutPage()}
-        {currentRoute === 'support' && renderSupportSection()}
-        {currentRoute === 'privacy' && renderLegalPage('privacy')}
-        {currentRoute === 'terms' && renderLegalPage('terms')}
-        {currentRoute === 'refund' && renderLegalPage('refund')}
-        {currentRoute === 'admin' && renderAdminPanel()}
-        {currentRoute === 'mentor' && renderAdminPanel('mentor')}
       </main>
 
       {/* G. Footer */}
       <footer className={(currentRoute === 'admin' || currentRoute === 'mentor') ? 'hidden' : 'bg-slate-900 text-slate-400 py-10 px-4 border-t border-slate-800 mt-16'}>
         <div className="max-w-7xl mx-auto grid sm:grid-cols-2 lg:grid-cols-4 gap-8 text-xs">
-          <div className="space-y-2">
-            <div className="font-extrabold text-white text-base">Unikart</div>
+          <div className="space-y-3">
+            <TransparentBrandLogo className="h-10 w-auto object-contain" alt="Unikart" />
             <p className="leading-relaxed">
               Verified college & university project marketplace. Evaluate watermarked PPT previews safely and book 1-on-1 guidance sessions.
             </p>

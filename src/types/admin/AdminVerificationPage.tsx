@@ -28,6 +28,7 @@ import {
 } from '../verificationService';
 import { SAMPLE_STUDENT_ID_FRONT, SAMPLE_STUDENT_ID_BACK } from '../mockIdCards';
 import { supabase } from '../../utils/supabase/client';
+import UnikartLoader from '../UnikartLoader';
 
 interface AdminVerificationPageProps {
   accessToken: string;
@@ -608,10 +609,8 @@ export default function AdminVerificationPage({
       {/* Verification Queue Table */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
         {loading ? (
-          <div className="space-y-3 p-6" aria-label="Loading verifications">
-            {[1, 2, 3].map((row) => (
-              <div key={row} className="h-16 animate-pulse rounded-xl bg-slate-100" />
-            ))}
+          <div className="p-12 flex items-center justify-center">
+            <UnikartLoader message="Loading student ID verification queue from database..." size="md" />
           </div>
         ) : queue.items.length === 0 ? (
           <div className="px-6 py-16 text-center">

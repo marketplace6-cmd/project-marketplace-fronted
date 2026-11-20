@@ -23,6 +23,8 @@ import {
   StudentCommerceAPI,
   StudentOrderRecord
 } from './commerceService';
+import TransparentBrandLogo from './TransparentBrandLogo';
+import UnikartLoader from './UnikartLoader';
 import { VerificationApiError } from './verificationService';
 
 interface StudentCommercePanelProps {
@@ -215,8 +217,8 @@ export default function StudentCommercePanel({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-10 text-sm text-slate-500">
-        <LoaderCircle size={18} className="animate-spin" /> Loading {view} from database…
+      <div className="rounded-xl border border-slate-200 bg-white p-10 flex items-center justify-center">
+        <UnikartLoader message={`Loading ${view} from database…`} size="md" />
       </div>
     );
   }
@@ -772,14 +774,8 @@ export default function StudentCommercePanel({
               {/* Invoice Header */}
               <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-5">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-extrabold text-lg">
-                      U
-                    </div>
-                    <div>
-                      <h1 className="text-xl font-extrabold tracking-tight text-slate-900">UNIKART</h1>
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Student Project Marketplace</p>
-                    </div>
+                  <div className="flex items-center gap-3">
+                    <TransparentBrandLogo className="h-12 w-auto object-contain" alt="Unikart" />
                   </div>
                   <p className="mt-2 text-[11px] text-slate-500">unikart.serveme.in · Academic Project Licensing</p>
                 </div>

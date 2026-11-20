@@ -28,6 +28,7 @@ import {
   MeetingRecordDTO
 } from '../commerceService';
 import { VerificationApiError } from '../verificationService';
+import UnikartLoader from '../UnikartLoader';
 
 interface AdminMeetingsOrdersPageProps {
   accessToken: string;
@@ -387,10 +388,8 @@ export default function AdminMeetingsOrdersPage({
       {/* Main Table */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
-          <div className="space-y-3 p-6">
-            {[1, 2, 3].map((row) => (
-              <div key={row} className="h-10 animate-pulse rounded-xl bg-slate-100" />
-            ))}
+          <div className="p-12 flex items-center justify-center">
+            <UnikartLoader message={`Loading ${tab === 'orders' ? 'orders & UTR records' : 'meeting requests'} from database...`} size="md" />
           </div>
         ) : pageData.items.length === 0 ? (
           <div className="px-6 py-16 text-center">

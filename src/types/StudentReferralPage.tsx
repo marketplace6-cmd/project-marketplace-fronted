@@ -30,6 +30,7 @@ import {
   WithdrawalRequestItem
 } from './referralService';
 import { supabase } from '../utils/supabase/client';
+import UnikartLoader from './UnikartLoader';
 
 export interface TeamMember {
   id: string;
@@ -717,11 +718,8 @@ export default function StudentReferralPage({
 
   if (loading) {
     return (
-      <div aria-label="Loading referral data" className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white flex items-center justify-center">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <RefreshCw className="w-5 h-5 animate-spin text-indigo-600" />
-          Loading referral data & network tiers...
-        </div>
+      <div aria-label="Loading referral data" className="rounded-2xl border border-slate-200 bg-white p-12 flex items-center justify-center">
+        <UnikartLoader message="Loading referral network team & reward tiers..." size="md" />
       </div>
     );
   }

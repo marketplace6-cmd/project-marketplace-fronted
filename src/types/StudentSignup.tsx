@@ -21,6 +21,7 @@ import { evaluatePasswordStrength } from './studentRegistrationService';
 import { StudentProfile } from './types';
 import { supabase } from '../supabaseClient';
 import { INITIAL_STUDENT } from './mockData';
+import TransparentBrandLogo from './TransparentBrandLogo';
 
 export interface StudentSignupProps {
   onSuccess?: (data: { studentProfile: StudentProfile }) => void;
@@ -438,6 +439,9 @@ export default function StudentSignup({
       <div className="w-full max-w-xl mx-auto bg-white rounded-3xl border border-purple-100 shadow-xl shadow-purple-900/5 p-6 sm:p-10 relative z-10 space-y-6">
         {/* Card Header */}
         <div className="text-center sm:text-left space-y-2">
+          <div className="flex justify-center sm:justify-start mb-2">
+            <TransparentBrandLogo className="h-14 w-auto object-contain" alt="Unikart" />
+          </div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs">
             <Sparkles size={13} className="text-purple-600" />
             <span>VERIFIED STUDENT REGISTRATION</span>

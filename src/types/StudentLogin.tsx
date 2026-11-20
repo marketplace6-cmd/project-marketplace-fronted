@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { StudentProfile } from './types';
 import { INITIAL_STUDENT } from './mockData';
+import TransparentBrandLogo from './TransparentBrandLogo';
 
 export interface StudentLoginProps {
   onSuccess?: (studentData: {
@@ -321,6 +322,9 @@ export default function StudentLogin({
   return (
     <div className="max-w-md mx-auto py-12 px-4 relative">
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+        <div className="flex justify-center mb-1">
+          <TransparentBrandLogo className="h-14 w-auto object-contain" alt="Unikart" />
+        </div>
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <span className="p-1 rounded-lg bg-indigo-50 text-indigo-700">

@@ -28,6 +28,7 @@ import {
   CatalogueStatus
 } from '../adminCatalogService';
 import { supabase } from '../../utils/supabase/client';
+import UnikartLoader from '../UnikartLoader';
 
 interface AdminCatalogPageProps {
   accessToken: string;
@@ -629,10 +630,8 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
       {/* Projects Table View */}
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {loading ? (
-          <div className="space-y-3 p-6" aria-label="Loading projects">
-            {[1, 2, 3, 4].map((row) => (
-              <div key={row} className="h-12 animate-pulse rounded-xl bg-slate-100" />
-            ))}
+          <div className="p-12 flex items-center justify-center">
+            <UnikartLoader message="Loading catalogue projects from database..." size="md" />
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="px-6 py-16 text-center">

@@ -7,6 +7,7 @@ import {
   VerificationApiError,
   VerificationChallenge
 } from './verificationService';
+import UnikartLoader from './UnikartLoader';
 
 export interface StudentProfileForVerification {
   id?: string;
@@ -336,7 +337,9 @@ export default function StudentVerificationPage({
               <button type="button" onClick={onLogin} className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Student sign in</button>
             </div>
           ) : loading ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-slate-500"><RefreshCw size={16} className="animate-spin" /> Loading verification status…</div>
+            <div className="py-6 flex items-center justify-center">
+              <UnikartLoader message="Loading verification status from database…" size="md" />
+            </div>
           ) : verification && (verification.status === 'APPROVED' || verification.status === 'VERIFIED') ? (
             <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50/80 p-6 shadow-xs">
               {message && <p role="status" className="mb-3 rounded-lg border border-emerald-300 bg-emerald-100 px-3 py-2 text-sm text-emerald-900 font-semibold">{message}</p>}

@@ -28,6 +28,8 @@ import {
   AdminDashboardStats,
   AdminDashboardSummary
 } from '../adminAuthService';
+import TransparentBrandLogo from '../TransparentBrandLogo';
+import UnikartLoader from '../UnikartLoader';
 import { supabase } from '../../utils/supabase/client';
 import AdminCatalogPage from './AdminCatalogPage';
 import AdminVerificationPage from './AdminVerificationPage';
@@ -294,11 +296,7 @@ function AdminSidebar({
       <aside className={`${mobileOpen ? 'fixed' : 'hidden'} inset-y-0 left-0 z-40 w-[270px] border-r border-slate-200 bg-white px-4 py-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:shrink-0 lg:flex-col`}>
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white"><ShieldCheck size={19} /></span>
-            <div>
-              <p className="text-sm font-extrabold text-slate-900">Unikart</p>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Administration</p>
-            </div>
+            <TransparentBrandLogo className="h-10 w-auto object-contain" alt="Unikart Administration" />
           </div>
           <button onClick={onClose} aria-label="Close menu" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"><X size={18} /></button>
         </div>

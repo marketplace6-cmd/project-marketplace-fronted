@@ -343,6 +343,7 @@ export default function App() {
   const [selectedTech, setSelectedTech] = useState<string>('All');
 
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [pptViewMode, setPptViewMode] = useState<'embedded' | 'slides'>('embedded');
 
   const [checkoutProjectId, setCheckoutProjectId] = useState<string>('PRJ-101');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -1150,6 +1151,7 @@ export default function App() {
 
     setActiveProjectId(project.id);
     setCurrentSlideIndex(0);
+    setPptViewMode('embedded');
     navigate('ppt-preview');
   };
 
@@ -1916,44 +1918,115 @@ export default function App() {
         </div>
       );
     }
-    const slides = activeProject?.pptSlides?.length ? activeProject.pptSlides : [
-      {
-        slideNumber: 1,
-        title: activeProject?.title || 'Project Presentation Overview',
-        bulletPoints: [
-          'Comprehensive System Architecture & Implementation',
-          'Production-grade Source Code and Deliverables Included',
-          'Academic Verification Approved by Unikart'
-        ],
-        diagramType: 'Architecture Overview'
-      },
-      {
-        slideNumber: 2,
-        title: 'Core Objectives & Scope',
-        bulletPoints: [
-          activeProject?.problemStatement || 'Problem Statement Overview',
-          activeProject?.shortDescription || 'Key Functional Deliverables',
-          'IEEE Standard Report & Presentation Ready'
-        ],
-        diagramType: 'Functional Workflow'
-      }
-    ];
-    const currentSlide = slides[currentSlideIndex] || slides[0];
+
+    const rawPptUrl = (activeProject.ppt_preview_url || activeProject.pptUrl || '').trim();
+    const isPdf = rawPptUrl.toLowerCase().includes('.pdf');
+    const isPpt = rawPptUrl.toLowerCase().includes('.ppt') || rawPptUrl.toLowerCase().includes('.pptx');
+
+    const iframeSrc = rawPptUrl
+      ? isPdf
+        ? (rawPptUrl.includes('#') ? rawPptUrl : `${rawPptUrl}#toolbar=0&navpanes=0&scrollbar=0`)
+        : `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(rawPptUrl)}`
+      : '';
+
+    const rawSlides = Array.isArray(activeProject?.pptSlides) && activeProject.pptSlides.length > 0
+      ? activeProject.pptSlides
+      : [
+          {
+            slideNumber: 1,
+            heading: activeProject?.title || 'Project Presentation Overview',
+            bullets: [
+              'Comprehensive System Architecture & Implementation',
+              'Production-grade Source Code and Deliverables Included',
+              'Academic Verification Approved by Unikart'
+            ],
+            footerNote: 'Unikart Academic Verified Deck'
+          },
+          {
+            slideNumber: 2,
+            heading: 'Core Objectives & System Scope',
+            bullets: [
+              activeProject?.problemStatement || 'Problem Statement Overview',
+              activeProject?.shortDescription || 'Key Functional Deliverables',
+              'IEEE Standard Report & Presentation Ready'
+            ],
+            footerNote: 'System Architecture & Implementation Scope'
+          },
+          {
+            slideNumber: 3,
+            heading: 'Technology Stack & Modules',
+            bullets: [
+              `Core Technologies: ${activeProject?.technologies?.join(', ') || 'Modern Full-Stack Architecture'}`,
+              `Target Specialization: ${activeProject?.category || 'Major Project'}`,
+              'Complete Step-by-Step Viva & Defense Preparation Included'
+            ],
+            footerNote: 'Tech Stack Specifications'
+          }
+        ];
+
+    const slides = rawSlides.map((slide: any, idx: number) => {
+      const bullets = Array.isArray(slide?.bullets)
+        ? slide.bullets
+        : Array.isArray(slide?.bulletPoints)
+        ? slide.bulletPoints
+        : [];
+      const heading = slide?.heading || slide?.title || `Slide ${idx + 1}: Overview`;
+      const footerNote = slide?.footerNote || `Slide ${idx + 1} of ${rawSlides.length} • Confidential`;
+      return {
+        slideNumber: slide?.slideNumber ?? idx + 1,
+        heading,
+        bullets,
+        footerNote
+      };
+    });
+
+    const safeIndex = Math.min(Math.max(0, currentSlideIndex), Math.max(0, slides.length - 1));
+    const currentSlide = slides[safeIndex] || {
+      slideNumber: 1,
+      heading: activeProject?.title || 'Presentation Preview',
+      bullets: ['Preview slide ready for verified student evaluation'],
+      footerNote: 'Protected Preview'
+    };
+
+    const showEmbeddedViewer = Boolean(rawPptUrl) && pptViewMode === 'embedded';
 
     return (
-      <div className="max-w-4xl mx-auto py-8 px-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="max-w-5xl mx-auto py-8 px-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 flex flex-wrap items-center justify-between gap-4 shadow-sm">
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-              Protected PPT Document Viewer
-            </span>
-            <h1 className="text-lg font-bold text-slate-900">{activeProject.title}</h1>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                Protected PPT Document Viewer
+              </span>
+              {rawPptUrl && (
+                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200">
+                  {isPdf ? 'PDF Deck' : isPpt ? 'PowerPoint Presentation' : 'Presentation File'}
+                </span>
+              )}
+            </div>
+            <h1 className="text-lg font-bold text-slate-900 mt-0.5">{activeProject.title}</h1>
           </div>
           <div className="flex items-center gap-3">
             {renderHeartCredits('sm')}
+            {rawPptUrl && (
+              <button
+                onClick={() => setPptViewMode((prev) => (prev === 'embedded' ? 'slides' : 'embedded'))}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                {pptViewMode === 'embedded' ? (
+                  <>
+                    <Layers className="w-3.5 h-3.5" /> Structured Slides
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" /> Embedded Document
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={() => navigate('project-details')}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-1"
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors"
             >
               <X className="w-4 h-4" /> Close Preview
             </button>
@@ -1962,75 +2035,114 @@ export default function App() {
 
         <div className="bg-rose-50 border border-rose-200 text-rose-900 px-4 py-2.5 rounded-xl text-xs mb-4 flex items-center justify-between flex-wrap gap-2">
           <span>
-            <strong>Preview Policy:</strong> Maximum 5 previews per 90-day cycle. Original PPT download links and source code are disabled.
+            <strong>Anti-Piracy Policy:</strong> Watermarked strictly for <strong>{student.fullName} ({student.id})</strong>. Original PPT download, printing, and source code extraction are disabled.
           </span>
-          <span className="font-mono font-semibold">Reset Date: {student.previewStats.nextResetDate}</span>
+          <span className="font-mono font-semibold">Reset Date: {student.previewStats?.nextResetDate || '90-Day Cycle'}</span>
         </div>
 
-        <div
-          onContextMenu={(e) => e.preventDefault()}
-          className="bg-slate-900 text-white rounded-2xl border-2 border-slate-700 shadow-2xl p-8 sm:p-14 min-h-[380px] flex flex-col justify-between relative overflow-hidden select-none"
-        >
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center opacity-10 -rotate-12">
-            <p className="text-2xl sm:text-4xl font-extrabold tracking-widest uppercase text-center">
-              PREVIEW ONLY • {student.fullName}
-            </p>
-            <p className="text-lg sm:text-2xl font-mono mt-2">
-              {student.collegeName} • {student.mobile}
-            </p>
-          </div>
-
-          <div className="relative z-10">
-            <div className="flex items-center justify-between border-b border-slate-700 pb-4 mb-6">
-              <span className="text-xs font-mono text-emerald-400">
-                SLIDE {currentSlide.slideNumber} OF {slides.length}
-              </span>
-              <span className="text-xs font-mono text-slate-400">
-                WATERMARK ID: {student.id}
-              </span>
+        {showEmbeddedViewer ? (
+          <div
+            onContextMenu={(e) => e.preventDefault()}
+            className="relative w-full rounded-2xl overflow-hidden border-2 border-slate-700 bg-slate-900 shadow-2xl select-none"
+            style={{ minHeight: '620px' }}
+          >
+            <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center select-none overflow-hidden">
+              <div className="transform -rotate-12 flex flex-col items-center justify-center opacity-25 p-6 bg-slate-900/40 backdrop-blur-[1px] rounded-2xl border border-white/10 shadow-xl">
+                <p className="text-xl sm:text-3xl md:text-4xl font-extrabold tracking-widest uppercase text-white text-center drop-shadow">
+                  PREVIEW ONLY • {student.fullName} • {student.id}
+                </p>
+                <p className="text-xs sm:text-sm font-mono text-emerald-400 mt-2 text-center font-bold">
+                  {student.collegeName || 'Verified Student'} • {student.email}
+                </p>
+                <p className="text-[10px] sm:text-xs font-mono text-rose-400 mt-1 uppercase tracking-wider font-semibold">
+                  UNIKART CONFIDENTIAL • ANTI-PIRACY PROTECTED
+                </p>
+              </div>
             </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-6">
-              {currentSlide.heading}
-            </h2>
-            <ul className="space-y-4">
-              {currentSlide.bullets.map((bullet, idx) => (
-                <li key={idx} className="flex items-start gap-3 text-slate-200 text-sm sm:text-base">
-                  <span className="w-6 h-6 rounded-full bg-indigo-500/30 border border-indigo-400 text-indigo-200 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
-                    {idx + 1}
+
+            <iframe
+              src={iframeSrc}
+              title={`Presentation Preview - ${activeProject.title}`}
+              className="w-full h-[620px] border-0 bg-white"
+            />
+          </div>
+        ) : (
+          <>
+            <div
+              onContextMenu={(e) => e.preventDefault()}
+              className="bg-slate-900 text-white rounded-2xl border-2 border-slate-700 shadow-2xl p-8 sm:p-14 min-h-[400px] flex flex-col justify-between relative overflow-hidden select-none"
+            >
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center opacity-15 -rotate-12 select-none">
+                <p className="text-2xl sm:text-4xl font-extrabold tracking-widest uppercase text-center">
+                  PREVIEW ONLY • {student.fullName} • {student.id}
+                </p>
+                <p className="text-sm sm:text-lg font-mono text-emerald-400 mt-2 text-center">
+                  {student.collegeName || 'Verified Student'} • {student.email}
+                </p>
+                <p className="text-xs font-mono text-rose-400 mt-1 uppercase tracking-wider">
+                  UNIKART CONFIDENTIAL • ANTI-PIRACY PROTECTED
+                </p>
+              </div>
+
+              <div className="relative z-10">
+                <div className="flex items-center justify-between border-b border-slate-700 pb-4 mb-6">
+                  <span className="text-xs font-mono text-emerald-400">
+                    SLIDE {currentSlide.slideNumber} OF {slides.length}
                   </span>
-                  <span>{bullet}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+                  <span className="text-xs font-mono text-slate-400">
+                    WATERMARK ID: {student.id}
+                  </span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white mb-6">
+                  {currentSlide.heading}
+                </h2>
+                <ul className="space-y-4">
+                  {currentSlide.bullets.length > 0 ? (
+                    currentSlide.bullets.map((bullet: string, idx: number) => (
+                      <li key={idx} className="flex items-start gap-3 text-slate-200 text-sm sm:text-base">
+                        <span className="w-6 h-6 rounded-full bg-indigo-500/30 border border-indigo-400 text-indigo-200 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                          {idx + 1}
+                        </span>
+                        <span>{bullet}</span>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-slate-400 text-sm italic">
+                      No additional bullet notes provided for this slide.
+                    </li>
+                  )}
+                </ul>
+              </div>
 
-          <div className="relative z-10 pt-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 mt-8">
-            <span>{currentSlide.footerNote}</span>
-            <span>Unikart Protected Viewer</span>
-          </div>
-        </div>
+              <div className="relative z-10 pt-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 mt-8">
+                <span>{currentSlide.footerNote}</span>
+                <span>Unikart Protected Viewer</span>
+              </div>
+            </div>
 
-        <div className="mt-4 bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
-          <button
-            disabled={currentSlideIndex === 0}
-            onClick={() => setCurrentSlideIndex((i) => Math.max(0, i - 1))}
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 text-xs font-bold rounded-lg inline-flex items-center gap-1"
-          >
-            <ChevronLeft className="w-4 h-4" /> Previous Slide
-          </button>
+            <div className="mt-4 bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between shadow-sm">
+              <button
+                disabled={currentSlideIndex === 0}
+                onClick={() => setCurrentSlideIndex((i) => Math.max(0, i - 1))}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-800 text-xs font-bold rounded-lg inline-flex items-center gap-1 transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" /> Previous Slide
+              </button>
 
-          <span className="text-xs font-bold text-slate-700">
-            Page {currentSlideIndex + 1} of {slides.length}
-          </span>
+              <span className="text-xs font-bold text-slate-700">
+                Slide {safeIndex + 1} of {slides.length}
+              </span>
 
-          <button
-            disabled={currentSlideIndex === slides.length - 1}
-            onClick={() => setCurrentSlideIndex((i) => Math.min(slides.length - 1, i + 1))}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1"
-          >
-            Next Slide <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+              <button
+                disabled={safeIndex >= slides.length - 1}
+                onClick={() => setCurrentSlideIndex((i) => Math.min(slides.length - 1, i + 1))}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1 transition-colors"
+              >
+                Next Slide <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
     );
   };

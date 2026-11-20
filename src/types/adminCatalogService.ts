@@ -19,6 +19,7 @@ export interface AdminProject {
   price: number;
   publication_status: CatalogueStatus;
   has_ppt: boolean;
+  ppt_preview_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -45,6 +46,8 @@ export interface AdminProjectInput {
   suitable_courses: string;
   price: number;
   publication_status: 'PUBLISHED' | 'SOLD_OUT' | 'DRAFT';
+  ppt_preview_url?: string;
+  has_ppt?: boolean;
 }
 
 export class AdminCatalogError extends Error {
@@ -107,7 +110,8 @@ function parseProject(value: unknown): AdminProject {
     suitable_courses: value.suitable_courses,
     price: value.price,
     publication_status: value.publication_status,
-    has_ppt: value.has_ppt,
+    has_ppt: Boolean(value.has_ppt || value.ppt_preview_url),
+    ppt_preview_url: typeof value.ppt_preview_url === 'string' ? value.ppt_preview_url : '',
     created_at: value.created_at,
     updated_at: value.updated_at
   };
@@ -272,7 +276,8 @@ export const AdminCatalogAPI = {
           suitable_courses: d.suitable_courses || '',
           price: Number(d.price) || 0,
           publication_status: d.publication_status || 'PUBLISHED',
-          has_ppt: Boolean(d.has_ppt),
+          has_ppt: Boolean(d.has_ppt || d.ppt_preview_url || d.ppt_url),
+          ppt_preview_url: d.ppt_preview_url || d.ppt_url || '',
           created_at: d.created_at || new Date().toISOString(),
           updated_at: d.updated_at || new Date().toISOString()
         }));
@@ -302,9 +307,37 @@ export const AdminCatalogAPI = {
     };
   },
 
+  async uploadPresentation(file: File, projectCode?: string): Promise<string> {
+    const cleanFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = `${projectCode || 'project'}/${cleanFileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('project-presentations')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+
+    if (error) {
+      console.error('Supabase storage upload error:', error);
+      throw new AdminCatalogError(`Presentation upload failed: ${error.message}`, 400);
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('project-presentations')
+      .getPublicUrl(data.path);
+
+    return publicUrlData.publicUrl;
+  },
+
   async create(accessToken: string, fields: AdminProjectInput, presentation: File | null): Promise<AdminProject> {
     const nextCode = `PRJ-${Math.floor(1000 + Math.random() * 9000)}`;
     const now = new Date().toISOString();
+
+    let pptPreviewUrl = fields.ppt_preview_url || '';
+    if (presentation) {
+      pptPreviewUrl = await AdminCatalogAPI.uploadPresentation(presentation, nextCode);
+    }
 
     const insertPayload = {
       project_code: nextCode,
@@ -314,6 +347,9 @@ export const AdminCatalogAPI = {
       project_type: fields.project_type,
       short_description: fields.short_description,
       description: fields.short_description,
+      problem_statement: fields.problem_statement || '',
+      feature_categories: fields.feature_categories || [],
+      deliverables: fields.deliverables || [],
       difficulty: fields.difficulty,
       technology_stack: fields.technology_stack,
       tech_stack: fields.technology_stack,
@@ -321,7 +357,8 @@ export const AdminCatalogAPI = {
       price: Number(fields.price) || 0,
       publication_status: fields.publication_status,
       status: fields.publication_status,
-      has_ppt: Boolean(presentation)
+      has_ppt: Boolean(presentation || pptPreviewUrl || fields.has_ppt),
+      ppt_preview_url: pptPreviewUrl
     };
 
     // 1. Direct Supabase insert FIRST - never hide errors in localStorage!
@@ -355,7 +392,8 @@ export const AdminCatalogAPI = {
       suitable_courses: fields.suitable_courses,
       price: Number(fields.price) || 0,
       publication_status: fields.publication_status as CatalogueStatus,
-      has_ppt: Boolean(presentation),
+      has_ppt: Boolean(row.has_ppt || pptPreviewUrl),
+      ppt_preview_url: row.ppt_preview_url || pptPreviewUrl,
       created_at: row.created_at || now,
       updated_at: row.updated_at || now
     };
@@ -368,7 +406,12 @@ export const AdminCatalogAPI = {
     return newProject;
   },
 
-  async update(accessToken: string, projectId: number, fields: Partial<AdminProjectInput>): Promise<AdminProject> {
+  async update(
+    accessToken: string,
+    projectId: number,
+    fields: Partial<AdminProjectInput>,
+    presentation?: File | null
+  ): Promise<AdminProject> {
     const updatePayload: Record<string, any> = {
       updated_at: new Date().toISOString()
     };
@@ -380,6 +423,9 @@ export const AdminCatalogAPI = {
       updatePayload.short_description = fields.short_description;
       updatePayload.description = fields.short_description;
     }
+    if (fields.problem_statement !== undefined) updatePayload.problem_statement = fields.problem_statement;
+    if (fields.feature_categories !== undefined) updatePayload.feature_categories = fields.feature_categories;
+    if (fields.deliverables !== undefined) updatePayload.deliverables = fields.deliverables;
     if (fields.difficulty) updatePayload.difficulty = fields.difficulty;
     if (fields.technology_stack) {
       updatePayload.technology_stack = fields.technology_stack;
@@ -390,6 +436,17 @@ export const AdminCatalogAPI = {
     if (fields.publication_status) {
       updatePayload.publication_status = fields.publication_status;
       updatePayload.status = fields.publication_status;
+    }
+
+    if (presentation) {
+      const uploadedUrl = await AdminCatalogAPI.uploadPresentation(presentation, `PRJ-${projectId}`);
+      updatePayload.ppt_preview_url = uploadedUrl;
+      updatePayload.has_ppt = true;
+    } else if (fields.ppt_preview_url !== undefined) {
+      updatePayload.ppt_preview_url = fields.ppt_preview_url;
+      if (fields.ppt_preview_url) {
+        updatePayload.has_ppt = true;
+      }
     }
 
     const { data: updatedRows, error: sbUpdateErr } = await supabase
@@ -404,23 +461,28 @@ export const AdminCatalogAPI = {
 
     const existing = loadLocalCatalog();
     const idx = existing.findIndex((p) => p.id === projectId);
-    const updatedProject: AdminProject = (updatedRows && updatedRows[0])
+    const row = updatedRows && updatedRows[0];
+    const updatedProject: AdminProject = row
       ? {
-          id: Number(updatedRows[0].id),
-          project_code: updatedRows[0].project_code,
-          topic_name: updatedRows[0].topic_name,
-          title: updatedRows[0].title,
-          category: updatedRows[0].category,
-          project_type: updatedRows[0].project_type,
-          short_description: updatedRows[0].short_description,
-          difficulty: updatedRows[0].difficulty,
-          technology_stack: updatedRows[0].technology_stack,
-          suitable_courses: updatedRows[0].suitable_courses,
-          price: Number(updatedRows[0].price),
-          publication_status: updatedRows[0].publication_status,
-          has_ppt: Boolean(updatedRows[0].has_ppt),
-          created_at: updatedRows[0].created_at,
-          updated_at: updatedRows[0].updated_at
+          id: Number(row.id),
+          project_code: row.project_code,
+          topic_name: row.topic_name,
+          title: row.title,
+          category: row.category,
+          project_type: row.project_type,
+          short_description: row.short_description,
+          problem_statement: row.problem_statement || '',
+          feature_categories: Array.isArray(row.feature_categories) ? row.feature_categories : [],
+          deliverables: Array.isArray(row.deliverables) ? row.deliverables : [],
+          difficulty: row.difficulty,
+          technology_stack: row.technology_stack,
+          suitable_courses: row.suitable_courses,
+          price: Number(row.price),
+          publication_status: row.publication_status,
+          has_ppt: Boolean(row.has_ppt || row.ppt_preview_url),
+          ppt_preview_url: row.ppt_preview_url || '',
+          created_at: row.created_at,
+          updated_at: row.updated_at
         }
       : idx !== -1
       ? { ...existing[idx], ...updatePayload }

@@ -44,13 +44,17 @@ export interface ProjectDTO {
   previewEligible: boolean;
   availability?: 'ACTIVE' | 'SOLD_OUT';
   hasPpt?: boolean;
+  ppt_preview_url?: string;
+  pptUrl?: string;
   price: number; // Hidden on public cards; shown only during verified evaluation/checkout
   genericPatternTheme: string; // Safe abstract visual gradient
   pptSlides: {
     slideNumber: number;
-    heading: string;
-    bullets: string[];
-    footerNote: string;
+    heading?: string;
+    title?: string;
+    bullets?: string[];
+    bulletPoints?: string[];
+    footerNote?: string;
   }[];
 }
 

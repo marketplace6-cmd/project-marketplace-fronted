@@ -87,12 +87,13 @@ function mapProject(value: unknown): ProjectDTO {
     deliverables: Array.isArray(value.deliverables)
       ? value.deliverables.filter((d): d is string => typeof d === 'string')
       : splitList(value.deliverables),
-    previewEligible: hasPpt && !soldOut,
-    hasPpt,
+    previewEligible: (hasPpt || Boolean(value.ppt_preview_url)) && !soldOut,
+    hasPpt: hasPpt || Boolean(value.ppt_preview_url),
+    ppt_preview_url: value.ppt_preview_url || value.ppt_url || '',
     availability: soldOut ? 'SOLD_OUT' : 'ACTIVE',
     price,
     genericPatternTheme: theme,
-    pptSlides: []
+    pptSlides: Array.isArray(value.ppt_slides) ? value.ppt_slides : Array.isArray(value.pptSlides) ? value.pptSlides : []
   };
 }
 

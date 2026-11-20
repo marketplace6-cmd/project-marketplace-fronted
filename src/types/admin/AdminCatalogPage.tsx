@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   Code2,
+  ExternalLink,
   FileText,
   FolderKanban,
   GraduationCap,
@@ -174,6 +175,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
   const [deliverablesList, setDeliverablesList] = useState<string[]>([]);
   const [newDeliverableInput, setNewDeliverableInput] = useState('');
   const [presentation, setPresentation] = useState<File | null>(null);
+  const [currentPptUrl, setCurrentPptUrl] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
   const [confirming, setConfirming] = useState<AdminProject | null>(null);
@@ -306,6 +308,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
       'Project Presentation Slides (PPT / PPTX)'
     ]);
     setPresentation(null);
+    setCurrentPptUrl('');
     setActiveTab('basic');
     setFormOpen(true);
     setError('');
@@ -314,6 +317,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
 
   const openEditForm = (project: AdminProject) => {
     setEditing(project);
+    setCurrentPptUrl(project.ppt_preview_url || '');
     setForm({
       topic_name: project.topic_name,
       title: project.title,
@@ -386,7 +390,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
       };
 
       if (editing) {
-        await AdminCatalogAPI.update(accessToken, editing.id, payload);
+        await AdminCatalogAPI.update(accessToken, editing.id, payload, presentation);
         setNotice(`Project "${payload.title}" updated successfully.`);
       } else {
         await AdminCatalogAPI.create(accessToken, payload, presentation);
@@ -395,6 +399,7 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
 
       setFormOpen(false);
       setPresentation(null);
+      setCurrentPptUrl('');
       await refreshCatalogue();
       if (onChanged) onChanged();
     } catch (requestError) {
@@ -676,7 +681,14 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
                             {project.project_code}
                           </span>
                           <div>
-                            <p className="font-semibold text-slate-900 leading-tight text-xs sm:text-sm line-clamp-1">{project.title}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-semibold text-slate-900 leading-tight text-xs sm:text-sm line-clamp-1">{project.title}</p>
+                              {Boolean(project.ppt_preview_url || project.has_ppt) && (
+                                <span className="shrink-0 inline-flex items-center gap-0.5 rounded bg-indigo-50 text-indigo-700 px-1.5 py-0.5 text-[9px] font-bold border border-indigo-200">
+                                  PPT Deck
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">{project.topic_name || project.short_description}</p>
                           </div>
                         </div>
@@ -1227,10 +1239,33 @@ export default function AdminCatalogPage({ accessToken, onSessionExpired, onChan
                       Allows verified students to view presentation slide previews on Unikart before scheduling meetings.
                     </p>
 
+                    {currentPptUrl && !presentation && (
+                      <div className="mb-2 p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 text-indigo-900 truncate">
+                          <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <span className="font-semibold truncate">Current Active Presentation Deck</span>
+                        </div>
+                        <a
+                          href={currentPptUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-indigo-600 hover:text-indigo-800 underline font-semibold shrink-0 ml-2 flex items-center gap-1"
+                        >
+                          View Uploaded PPT <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    )}
+
                     <div className="mt-2 flex items-center gap-3">
                       <label className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-4 text-xs font-medium text-slate-600 hover:bg-indigo-50/50 hover:border-indigo-300 transition-all">
                         <Upload size={18} className="text-indigo-600" />
-                        <span>{presentation ? presentation.name : 'Upload Presentation Deck (.pdf, .ppt, .pptx — max 20 MB)'}</span>
+                        <span>
+                          {presentation
+                            ? `${presentation.name} (${(presentation.size / (1024 * 1024)).toFixed(1)} MB)`
+                            : currentPptUrl
+                            ? 'Replace Presentation Deck (.pdf, .ppt, .pptx — max 20 MB)'
+                            : 'Upload Presentation Deck (.pdf, .ppt, .pptx — max 20 MB)'}
+                        </span>
                         <input
                           type="file"
                           accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"

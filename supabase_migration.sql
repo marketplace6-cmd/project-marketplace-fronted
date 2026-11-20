@@ -198,6 +198,39 @@ CREATE POLICY "Allow public delete on meetings"
 
 GRANT ALL ON TABLE public.meetings TO anon, authenticated, service_role;
 
+-- -----------------------------------------------------------------------------
+-- Projects Table Presentation Columns & Storage Bucket
+-- -----------------------------------------------------------------------------
+ALTER TABLE IF EXISTS public.projects
+  ADD COLUMN IF NOT EXISTS ppt_preview_url TEXT,
+  ADD COLUMN IF NOT EXISTS has_ppt BOOLEAN DEFAULT FALSE;
+
+-- Storage Bucket for Project Presentations (PDF/PPT/PPTX)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('project-presentations', 'project-presentations', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Allow public select on project-presentations" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public insert on project-presentations" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public update on project-presentations" ON storage.objects;
+
+CREATE POLICY "Allow public select on project-presentations"
+  ON storage.objects FOR SELECT
+  TO anon, authenticated
+  USING (bucket_id = 'project-presentations');
+
+CREATE POLICY "Allow public insert on project-presentations"
+  ON storage.objects FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (bucket_id = 'project-presentations');
+
+CREATE POLICY "Allow public update on project-presentations"
+  ON storage.objects FOR UPDATE
+  TO anon, authenticated
+  USING (bucket_id = 'project-presentations')
+  WITH CHECK (bucket_id = 'project-presentations');
+
+
 
 
 

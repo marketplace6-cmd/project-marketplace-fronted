@@ -769,6 +769,52 @@ function StudentReferralPageContent({
     }
   }, [accessToken, onSessionExpired, retry, studentId, referralCode]);
 
+  // 4-Level Team Tree Memoized Computations (Strictly at top before any returns)
+  const safeTeamMembers = useMemo(() => (Array.isArray(teamMembers) ? teamMembers : []), [teamMembers]);
+  const level1Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 1), [safeTeamMembers]);
+  const level2Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 2), [safeTeamMembers]);
+  const level3Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 3), [safeTeamMembers]);
+  const level4Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 4), [safeTeamMembers]);
+
+  const directVerified = useMemo(
+    () => level1Members.filter((m) => m && m.verificationStatus === 'Verified').length,
+    [level1Members]
+  );
+
+  const indirectVerified = useMemo(
+    () => safeTeamMembers.filter((m) => m && m.level >= 2 && m.verificationStatus === 'Verified').length,
+    [safeTeamMembers]
+  );
+
+  const actionNeededCount = useMemo(
+    () => safeTeamMembers.filter((m) => m && m.verificationStatus !== 'Verified').length,
+    [safeTeamMembers]
+  );
+
+  const totalSalesCount = useMemo(
+    () => safeTeamMembers.filter((m) => m && m.saleBottleneckStatus === 'Project Purchased ✓').length,
+    [safeTeamMembers]
+  );
+
+  const filteredMembers = useMemo(() => {
+    return safeTeamMembers.filter((m) => {
+      if (!m) return false;
+      const matchesLevel = selectedTabLevel === 'ALL' || String(m.level) === selectedTabLevel;
+      const q = String(teamSearch || '').toLowerCase().trim();
+      if (!q) return matchesLevel;
+      const sName = String(m.studentName || '').toLowerCase();
+      const sId = String(m.studentId || '').toLowerCase();
+      const cName = String(m.collegeName || '').toLowerCase();
+      const refBy = String(m.referredByName || '').toLowerCase();
+      const matchesSearch =
+        sName.includes(q) ||
+        sId.includes(q) ||
+        cName.includes(q) ||
+        refBy.includes(q);
+      return matchesLevel && matchesSearch;
+    });
+  }, [safeTeamMembers, selectedTabLevel, teamSearch]);
+
   const share = async () => {
     if (!dashboard) return;
     setMessage('');
@@ -836,33 +882,7 @@ function StudentReferralPageContent({
     setRetry((value) => value + 1);
   };
 
-  if (loading) {
-    return (
-      <div aria-label="Loading referral data" className="rounded-2xl border border-slate-200 bg-white p-12 flex items-center justify-center">
-        <UnikartLoader message="Loading referral network team & reward tiers..." size="md" />
-      </div>
-    );
-  }
-
-  if (!dashboard) {
-    return (
-      <section role="alert" className="rounded-2xl border border-rose-200 bg-white p-8 text-center space-y-4">
-        <h2 className="text-base font-bold text-slate-900">Referral data is unavailable</h2>
-        <p className="text-sm text-rose-700">{error || 'No referral dashboard was returned.'}</p>
-        <div className="flex justify-center gap-3">
-          <button onClick={refresh} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-            <RefreshCw size={15} /> Retry
-          </button>
-          {!accessToken && (
-            <button onClick={onLogin} className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">
-              Sign In
-            </button>
-          )}
-        </div>
-      </section>
-    );
-  }
-
+  // Safe dashboard and derived variables
   const safeDashboard = dashboard || createDefaultDashboard(studentId, referralCode);
   const effectiveCode = String(safeDashboard.referral_code || referralCode || studentId || '').trim();
   const effectiveStudentId = String(safeDashboard.student_id || studentId || '').trim();
@@ -879,53 +899,8 @@ function StudentReferralPageContent({
   const eligibleRewardsAmt = Number(safeDashboard.eligible_rewards) || 0;
   const availableBalance = Math.max(0, eligibleRewardsAmt - pendingWithdrawalTotal);
 
-  const safeTeamMembers = Array.isArray(teamMembers) ? teamMembers : [];
-  const level1Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 1), [safeTeamMembers]);
-  const level2Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 2), [safeTeamMembers]);
-  const level3Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 3), [safeTeamMembers]);
-  const level4Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 4), [safeTeamMembers]);
-
   const directTotal = level1Members.length;
-  const directVerified = useMemo(
-    () => level1Members.filter((m) => m && m.verificationStatus === 'Verified').length,
-    [level1Members]
-  );
-
   const indirectTotal = level2Members.length + level3Members.length + level4Members.length;
-  const indirectVerified = useMemo(
-    () => safeTeamMembers.filter((m) => m && m.level >= 2 && m.verificationStatus === 'Verified').length,
-    [safeTeamMembers]
-  );
-
-  const actionNeededCount = useMemo(
-    () => safeTeamMembers.filter((m) => m && m.verificationStatus !== 'Verified').length,
-    [safeTeamMembers]
-  );
-
-  const totalSalesCount = useMemo(
-    () => safeTeamMembers.filter((m) => m && m.saleBottleneckStatus === 'Project Purchased ✓').length,
-    [safeTeamMembers]
-  );
-
-  const filteredMembers = useMemo(() => {
-    return safeTeamMembers.filter((m) => {
-      if (!m) return false;
-      const matchesLevel = selectedTabLevel === 'ALL' || String(m.level) === selectedTabLevel;
-      const q = String(teamSearch || '').toLowerCase().trim();
-      if (!q) return matchesLevel;
-      const sName = String(m.studentName || '').toLowerCase();
-      const sId = String(m.studentId || '').toLowerCase();
-      const cName = String(m.collegeName || '').toLowerCase();
-      const refBy = String(m.referredByName || '').toLowerCase();
-      const matchesSearch =
-        sName.includes(q) ||
-        sId.includes(q) ||
-        cName.includes(q) ||
-        refBy.includes(q);
-      return matchesLevel && matchesSearch;
-    });
-  }, [safeTeamMembers, selectedTabLevel, teamSearch]);
-
   const level1Referrals = directTotal;
   const isWithdrawalUnlocked = level1Referrals >= 1 && availableBalance > 0;
 
@@ -1003,6 +978,34 @@ function StudentReferralPageContent({
       setSubmittingWithdrawal(false);
     }
   };
+
+  // Early returns strictly AFTER ALL hooks and calculations have executed
+  if (loading) {
+    return (
+      <div aria-label="Loading referral data" className="rounded-2xl border border-slate-200 bg-white p-12 flex items-center justify-center">
+        <UnikartLoader message="Loading referral network team & reward tiers..." size="md" />
+      </div>
+    );
+  }
+
+  if (!dashboard) {
+    return (
+      <section role="alert" className="rounded-2xl border border-rose-200 bg-white p-8 text-center space-y-4">
+        <h2 className="text-base font-bold text-slate-900">Referral data is unavailable</h2>
+        <p className="text-sm text-rose-700">{error || 'No referral dashboard was returned.'}</p>
+        <div className="flex justify-center gap-3">
+          <button onClick={refresh} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+            <RefreshCw size={15} /> Retry
+          </button>
+          {!accessToken && (
+            <button onClick={onLogin} className="inline-flex items-center gap-2 rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200">
+              Sign In
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-6">

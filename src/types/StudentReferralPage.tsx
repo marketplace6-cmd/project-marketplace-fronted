@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, useMemo, FormEvent } from 'react';
+import React, { useEffect, useState, useMemo, FormEvent, Component, ErrorInfo, ReactNode } from 'react';
 import {
   Check,
   Copy,
@@ -31,6 +31,56 @@ import {
 } from './referralService';
 import { supabase } from '../utils/supabase/client';
 import UnikartLoader from './UnikartLoader';
+
+// Error Boundary to prevent any blank white screen crash
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ReferralErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('ReferralErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <section role="alert" className="rounded-2xl border border-rose-200 bg-white p-8 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 mx-auto flex items-center justify-center">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <h2 className="text-base font-bold text-slate-900">Referral Network Temporarily Unavailable</h2>
+          <p className="text-xs text-rose-700 max-w-md mx-auto">
+            {this.state.error?.message || 'A temporary issue occurred while rendering your referral dashboard.'}
+          </p>
+          <div className="flex justify-center gap-3">
+            <button
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition-colors cursor-pointer"
+            >
+              <RefreshCw size={14} /> Try Again
+            </button>
+          </div>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export interface TeamMember {
   id: string;
@@ -99,8 +149,9 @@ interface StudentReferralPageProps {
   onToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-function formatCurrency(value: number, currency = 'INR') {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value);
+function formatCurrency(value: number | undefined | null, currency = 'INR') {
+  const num = typeof value === 'number' && !isNaN(value) ? value : Number(value) || 0;
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(num);
 }
 
 async function copyText(value: string) {
@@ -163,15 +214,17 @@ export function createInitialLevelStats(): ReferralLevelStat[] {
   }));
 }
 
-function createDefaultDashboard(studentId: string, referralCode: string): StudentReferralDashboard {
+function createDefaultDashboard(studentId?: string, referralCode?: string): StudentReferralDashboard {
+  const code = String(referralCode || studentId || 'STU-REF');
+  const id = String(studentId || referralCode || 'STU-2026-0001');
   return {
-    student_id: studentId,
+    student_id: id,
     referral_id: 8402,
-    referral_code: referralCode,
+    referral_code: code,
     status: 'ACTIVE',
     referral_link: typeof window !== 'undefined'
-      ? `${window.location.origin}/register?ref=${referralCode}`
-      : `https://unikart.com/register?ref=${referralCode}`,
+      ? `${window.location.origin}/register?ref=${code}`
+      : `https://unikart.com/register?ref=${code}`,
     total_successful_referrals: 0,
     pending_referrals: 0,
     eligible_rewards: 0,
@@ -180,7 +233,7 @@ function createDefaultDashboard(studentId: string, referralCode: string): Studen
   };
 }
 
-export default function StudentReferralPage({
+function StudentReferralPageContent({
   accessToken,
   onSessionExpired,
   onLogin,
@@ -230,8 +283,8 @@ export default function StudentReferralPage({
     const loadLiveReferralData = async () => {
       setLoading(true);
       setError('');
-      const effectiveCode = referralCode || studentId || '';
-      const effectiveId = studentId || referralCode || '';
+      const effectiveCode = String(referralCode || studentId || '').trim();
+      const effectiveId = String(studentId || referralCode || '').trim();
 
       if (!effectiveCode && !effectiveId) {
         setLoading(false);
@@ -257,21 +310,39 @@ export default function StudentReferralPage({
         let meetRows: any[] = [];
 
         try {
-          const [refRes, orderRes, payoutRes, verifRes, meetRes] = await Promise.all([
+          const [refSettled, orderSettled, payoutSettled, verifSettled, meetSettled] = await Promise.allSettled([
             supabase.from('referrals').select('*').order('created_at', { ascending: false }),
             supabase.from('orders').select('*').order('created_at', { ascending: false }),
-            supabase.from('payouts').select('*').or(`referral_code.eq.${effectiveCode},student_id.eq.${effectiveId}`).order('created_at', { ascending: false }),
+            supabase.from('payouts').select('*').order('created_at', { ascending: false }),
             supabase.from('verifications').select('*').order('created_at', { ascending: false }),
             supabase.from('meetings').select('*').order('created_at', { ascending: false })
           ]);
 
-          if (!refRes.error && refRes.data) refRows = refRes.data;
-          if (!orderRes.error && orderRes.data) orderRows = orderRes.data;
-          if (!payoutRes.error && payoutRes.data) payoutRows = payoutRes.data;
-          if (!verifRes.error && verifRes.data) verifRows = verifRes.data;
-          if (!meetRes.error && meetRes.data) meetRows = meetRes.data;
-        } catch {
-          /* Supabase offline or schema unavailable */
+          if (refSettled.status === 'fulfilled' && !refSettled.value.error && Array.isArray(refSettled.value.data)) {
+            refRows = refSettled.value.data;
+          }
+          if (orderSettled.status === 'fulfilled' && !orderSettled.value.error && Array.isArray(orderSettled.value.data)) {
+            orderRows = orderSettled.value.data;
+          }
+          if (payoutSettled.status === 'fulfilled' && !payoutSettled.value.error && Array.isArray(payoutSettled.value.data)) {
+            const rawPayouts = payoutSettled.value.data;
+            const targetCode = effectiveCode.toLowerCase();
+            const targetId = effectiveId.toLowerCase();
+            payoutRows = rawPayouts.filter((p: any) => {
+              if (!p) return false;
+              const pCode = String(p.referral_code || '').toLowerCase().trim();
+              const pId = String(p.student_id || '').toLowerCase().trim();
+              return (targetCode && pCode === targetCode) || (targetId && pId === targetId);
+            });
+          }
+          if (verifSettled.status === 'fulfilled' && !verifSettled.value.error && Array.isArray(verifSettled.value.data)) {
+            verifRows = verifSettled.value.data;
+          }
+          if (meetSettled.status === 'fulfilled' && !meetSettled.value.error && Array.isArray(meetSettled.value.data)) {
+            meetRows = meetSettled.value.data;
+          }
+        } catch (queryErr) {
+          console.warn('Supabase offline or schema unavailable:', queryErr);
         }
 
         // Incorporate local verification queue if any
@@ -281,7 +352,7 @@ export default function StudentReferralPage({
             const parsed = JSON.parse(rawLocalQueue);
             if (Array.isArray(parsed)) {
               for (const item of parsed) {
-                if (!verifRows.some((v) => String(v.id) === String(item.id) || (v.user_id && String(v.user_id) === String(item.user_id)))) {
+                if (item && !verifRows.some((v) => String(v?.id || '') === String(item.id || '') || (v?.user_id && String(v.user_id) === String(item.user_id)))) {
                   verifRows.push(item);
                 }
               }
@@ -296,6 +367,7 @@ export default function StudentReferralPage({
         // 3. Map verifications by student ID, user ID, and email for fast lookup
         const verifMap = new Map<string, any>();
         for (const v of verifRows) {
+          if (!v) continue;
           if (v.student_id_code) verifMap.set(String(v.student_id_code).toLowerCase().trim(), v);
           if (v.user_id) verifMap.set(String(v.user_id).toLowerCase().trim(), v);
           if (v.email) verifMap.set(String(v.email).toLowerCase().trim(), v);
@@ -303,7 +375,7 @@ export default function StudentReferralPage({
 
         const getMemberVerifStatus = (v: any): 'Verified' | 'Pending Review' | 'Rejected' | 'ID Not Uploaded' => {
           if (!v) return 'ID Not Uploaded';
-          const st = (v.status || '').toUpperCase();
+          const st = String(v.status || '').toUpperCase().trim();
           if (st === 'APPROVED' || st === 'VERIFIED') return 'Verified';
           if (st === 'REJECTED') return 'Rejected';
           if (st === 'PENDING' || st === 'RE-UPLOADED') return 'Pending Review';
@@ -312,15 +384,16 @@ export default function StudentReferralPage({
         };
 
         const getMemberMeetingStatus = (stdId: string, email?: string): '5-Min Meet Booked' | 'Meet Scheduled' | 'No Meeting Yet' => {
-          const sId = stdId.toLowerCase().trim();
-          const eMail = email?.toLowerCase().trim();
-          const studentMeetings = meetRows.filter((m: any) => {
+          const sId = String(stdId || '').toLowerCase().trim();
+          const eMail = String(email || '').toLowerCase().trim();
+          const studentMeetings = (Array.isArray(meetRows) ? meetRows : []).filter((m: any) => {
+            if (!m) return false;
             const mId = String(m.student_id || '').toLowerCase().trim();
             const mEmail = String(m.student_email || '').toLowerCase().trim();
             return (sId && mId === sId) || (eMail && mEmail === eMail);
           });
-          if (studentMeetings.some((m: any) => m.status === 'SCHEDULED')) return 'Meet Scheduled';
-          if (studentMeetings.some((m: any) => m.status === 'PENDING')) return '5-Min Meet Booked';
+          if (studentMeetings.some((m: any) => String(m?.status || '').toUpperCase() === 'SCHEDULED')) return 'Meet Scheduled';
+          if (studentMeetings.some((m: any) => String(m?.status || '').toUpperCase() === 'PENDING')) return '5-Min Meet Booked';
           return 'No Meeting Yet';
         };
 
@@ -329,13 +402,16 @@ export default function StudentReferralPage({
           verifStatus: 'Verified' | 'Pending Review' | 'Rejected' | 'ID Not Uploaded',
           email?: string
         ): 'ID Card Not Uploaded' | 'Waiting for Admin ID Approval' | 'Verified — No Purchase Yet' | 'Project Purchased ✓' => {
-          const sId = stdId.toLowerCase().trim();
-          const eMail = email?.toLowerCase().trim();
-          const hasPurchased = orderRows.some((o: any) => {
+          const sId = String(stdId || '').toLowerCase().trim();
+          const eMail = String(email || '').toLowerCase().trim();
+          const hasPurchased = (Array.isArray(orderRows) ? orderRows : []).some((o: any) => {
+            if (!o) return false;
             const oId = String(o.student_id || '').toLowerCase().trim();
             const oEmail = String(o.student_email || '').toLowerCase().trim();
             const matchesStudent = (sId && oId === sId) || (eMail && oEmail === eMail);
-            const isCompleted = o.status === 'COMPLETED' || o.payment_status === 'PAID' || o.payment_status === 'COMPLETED';
+            const oStatus = String(o.status || '').toUpperCase();
+            const pStatus = String(o.payment_status || '').toUpperCase();
+            const isCompleted = oStatus === 'COMPLETED' || pStatus === 'PAID' || pStatus === 'COMPLETED';
             return matchesStudent && isCompleted;
           });
 
@@ -353,49 +429,51 @@ export default function StudentReferralPage({
           referredById: string,
           joinedAtFallback: string
         ): TeamMember => {
-          const v = verifMap.get(stdId.toLowerCase().trim());
-          const studentName = v?.student_name || studentNameFallback || `Student ${stdId.slice(-4)}`;
-          const collegeName = v?.college || 'College';
+          const safeStdId = String(stdId || '').trim();
+          const v = safeStdId ? verifMap.get(safeStdId.toLowerCase()) : undefined;
+          const studentName = String(v?.student_name || studentNameFallback || (safeStdId ? `Student ${safeStdId.slice(-4)}` : 'Student Peer')).trim();
+          const collegeName = String(v?.college || 'College').trim();
           const verifStatus = getMemberVerifStatus(v);
-          const meetStatus = getMemberMeetingStatus(stdId, v?.email);
-          const saleStatus = getMemberSaleStatus(stdId, verifStatus, v?.email);
+          const meetStatus = getMemberMeetingStatus(safeStdId, v?.email);
+          const saleStatus = getMemberSaleStatus(safeStdId, verifStatus, v?.email);
 
           return {
-            id: `${stdId}-lvl${level}`,
-            studentId: stdId,
-            studentName,
-            collegeName,
+            id: `${safeStdId || 'std'}-lvl${level}-${Math.random().toString(36).substring(2, 7)}`,
+            studentId: safeStdId || 'STU-0000',
+            studentName: studentName || 'Student Peer',
+            collegeName: collegeName || 'College',
             level,
             type: level === 1 ? 'Direct' : 'Indirect',
-            referredByName,
-            referredById,
+            referredByName: String(referredByName || (level === 1 ? 'Direct (You)' : 'Peer Referral')),
+            referredById: String(referredById || ''),
             verificationStatus: verifStatus,
             meetingStatus: meetStatus,
             saleBottleneckStatus: saleStatus,
-            joinedAt: v?.submitted_at || v?.created_at || joinedAtFallback || new Date().toISOString()
+            joinedAt: String(v?.submitted_at || v?.created_at || joinedAtFallback || new Date().toISOString())
           };
         };
 
         // 4. Multi-level Graph Traversal: Max 4 levels, unlimited legs
         const visited = new Set<string>();
-        const rootCodes = [effectiveCode, effectiveId].map((s) => s.toLowerCase().trim()).filter(Boolean);
+        const rootCodes = [effectiveCode, effectiveId].map((s) => String(s || '').toLowerCase().trim()).filter(Boolean);
         for (const rc of rootCodes) visited.add(rc);
 
         const findReferredCandidates = (inviterCodes: string[]) => {
           const candidates: { studentId: string; studentName: string; joinedAt: string; inviterCode: string }[] = [];
-          const lowerInviterCodes = new Set(inviterCodes.map((c) => c.toLowerCase().trim()));
+          const lowerInviterCodes = new Set(inviterCodes.map((c) => String(c || '').toLowerCase().trim()).filter(Boolean));
 
           for (const r of refRows) {
-            const rRefCode = (r.referral_code || '').toLowerCase().trim();
-            const rRefId = (r.referrer_student_id || '').toLowerCase().trim();
-            const candidateId = (r.referred_student_id || '').trim();
+            if (!r) continue;
+            const rRefCode = String(r.referral_code || '').toLowerCase().trim();
+            const rRefId = String(r.referrer_student_id || '').toLowerCase().trim();
+            const candidateId = String(r.referred_student_id || '').trim();
 
             if ((lowerInviterCodes.has(rRefCode) || lowerInviterCodes.has(rRefId)) && candidateId) {
               if (!visited.has(candidateId.toLowerCase()) && !candidates.some((c) => c.studentId.toLowerCase() === candidateId.toLowerCase())) {
                 candidates.push({
                   studentId: candidateId,
-                  studentName: r.referred_student_name || '',
-                  joinedAt: r.created_at || '',
+                  studentName: String(r.referred_student_name || '').trim(),
+                  joinedAt: String(r.created_at || ''),
                   inviterCode: rRefCode || rRefId
                 });
               }
@@ -403,15 +481,16 @@ export default function StudentReferralPage({
           }
 
           for (const v of verifRows) {
-            const vRefCode = (v.referral_code || '').toLowerCase().trim();
-            const candidateId = (v.student_id_code || '').trim();
+            if (!v) continue;
+            const vRefCode = String(v.referral_code || '').toLowerCase().trim();
+            const candidateId = String(v.student_id_code || '').trim();
 
             if (lowerInviterCodes.has(vRefCode) && candidateId && candidateId.toLowerCase() !== vRefCode) {
               if (!visited.has(candidateId.toLowerCase()) && !candidates.some((c) => c.studentId.toLowerCase() === candidateId.toLowerCase())) {
                 candidates.push({
                   studentId: candidateId,
-                  studentName: v.student_name || '',
-                  joinedAt: v.submitted_at || v.created_at || '',
+                  studentName: String(v.student_name || '').trim(),
+                  joinedAt: String(v.submitted_at || v.created_at || ''),
                   inviterCode: vRefCode
                 });
               }
@@ -425,24 +504,32 @@ export default function StudentReferralPage({
         const lvl1Cands = findReferredCandidates(rootCodes);
         const lvl1Members: TeamMember[] = [];
         for (const cand of lvl1Cands) {
-          visited.add(cand.studentId.toLowerCase());
+          const safeId = String(cand.studentId || '').trim();
+          if (!safeId) continue;
+          visited.add(safeId.toLowerCase());
           lvl1Members.push(
-            buildTeamMember(cand.studentId, cand.studentName, 1, 'Direct (You)', effectiveId, cand.joinedAt)
+            buildTeamMember(safeId, cand.studentName, 1, 'Direct (You)', effectiveId, cand.joinedAt)
           );
         }
 
         // Level 2: Peer Invites (invited by Level 1 members)
         const lvl2Members: TeamMember[] = [];
         for (const m1 of lvl1Members) {
-          const m1Codes = [m1.studentId];
-          const v = verifMap.get(m1.studentId.toLowerCase());
-          if (v?.referral_code && v.referral_code !== m1.studentId) m1Codes.push(v.referral_code);
+          if (!m1) continue;
+          const m1Codes = [String(m1.studentId || '').trim()].filter(Boolean);
+          const v = verifMap.get(String(m1.studentId || '').toLowerCase().trim());
+          if (v?.referral_code) {
+            const safeRef = String(v.referral_code).trim();
+            if (safeRef && safeRef !== m1.studentId) m1Codes.push(safeRef);
+          }
 
           const lvl2Cands = findReferredCandidates(m1Codes);
           for (const cand of lvl2Cands) {
-            visited.add(cand.studentId.toLowerCase());
+            const safeId = String(cand.studentId || '').trim();
+            if (!safeId) continue;
+            visited.add(safeId.toLowerCase());
             lvl2Members.push(
-              buildTeamMember(cand.studentId, cand.studentName, 2, m1.studentName, m1.studentId, cand.joinedAt)
+              buildTeamMember(safeId, cand.studentName, 2, m1.studentName, m1.studentId, cand.joinedAt)
             );
           }
         }
@@ -450,15 +537,21 @@ export default function StudentReferralPage({
         // Level 3: Department Network (invited by Level 2 members)
         const lvl3Members: TeamMember[] = [];
         for (const m2 of lvl2Members) {
-          const m2Codes = [m2.studentId];
-          const v = verifMap.get(m2.studentId.toLowerCase());
-          if (v?.referral_code && v.referral_code !== m2.studentId) m2Codes.push(v.referral_code);
+          if (!m2) continue;
+          const m2Codes = [String(m2.studentId || '').trim()].filter(Boolean);
+          const v = verifMap.get(String(m2.studentId || '').toLowerCase().trim());
+          if (v?.referral_code) {
+            const safeRef = String(v.referral_code).trim();
+            if (safeRef && safeRef !== m2.studentId) m2Codes.push(safeRef);
+          }
 
           const lvl3Cands = findReferredCandidates(m2Codes);
           for (const cand of lvl3Cands) {
-            visited.add(cand.studentId.toLowerCase());
+            const safeId = String(cand.studentId || '').trim();
+            if (!safeId) continue;
+            visited.add(safeId.toLowerCase());
             lvl3Members.push(
-              buildTeamMember(cand.studentId, cand.studentName, 3, m2.studentName, m2.studentId, cand.joinedAt)
+              buildTeamMember(safeId, cand.studentName, 3, m2.studentName, m2.studentId, cand.joinedAt)
             );
           }
         }
@@ -466,15 +559,21 @@ export default function StudentReferralPage({
         // Level 4: Campus Community (invited by Level 3 members)
         const lvl4Members: TeamMember[] = [];
         for (const m3 of lvl3Members) {
-          const m3Codes = [m3.studentId];
-          const v = verifMap.get(m3.studentId.toLowerCase());
-          if (v?.referral_code && v.referral_code !== m3.studentId) m3Codes.push(v.referral_code);
+          if (!m3) continue;
+          const m3Codes = [String(m3.studentId || '').trim()].filter(Boolean);
+          const v = verifMap.get(String(m3.studentId || '').toLowerCase().trim());
+          if (v?.referral_code) {
+            const safeRef = String(v.referral_code).trim();
+            if (safeRef && safeRef !== m3.studentId) m3Codes.push(safeRef);
+          }
 
           const lvl4Cands = findReferredCandidates(m3Codes);
           for (const cand of lvl4Cands) {
-            visited.add(cand.studentId.toLowerCase());
+            const safeId = String(cand.studentId || '').trim();
+            if (!safeId) continue;
+            visited.add(safeId.toLowerCase());
             lvl4Members.push(
-              buildTeamMember(cand.studentId, cand.studentName, 4, m3.studentName, m3.studentId, cand.joinedAt)
+              buildTeamMember(safeId, cand.studentName, 4, m3.studentName, m3.studentId, cand.joinedAt)
             );
           }
         }
@@ -486,16 +585,21 @@ export default function StudentReferralPage({
         const historyMap = new Map<number, StudentReferralHistoryItem>();
 
         // Incorporate backend data if any
-        if (backendData?.history) {
+        if (backendData?.history && Array.isArray(backendData.history)) {
           for (const item of backendData.history) {
-            historyMap.set(item.id, item);
+            if (item && typeof item.id === 'number') {
+              historyMap.set(item.id, item);
+            }
           }
         }
 
         // Incorporate Supabase referrals
         for (const r of refRows) {
-          const id = Number(r.id);
-          const isCompleted = r.status === 'SUCCESSFUL' || r.status === 'COMPLETED' || r.reward_status === 'PAID';
+          if (!r) continue;
+          const id = Number(r.id) || Math.floor(Math.random() * 100000);
+          const rStatus = String(r.status || '').toUpperCase();
+          const rewStatus = String(r.reward_status || '').toUpperCase();
+          const isCompleted = rStatus === 'SUCCESSFUL' || rStatus === 'COMPLETED' || rewStatus === 'PAID';
           historyMap.set(id, {
             id,
             status: r.status || (isCompleted ? 'COMPLETED' : 'PENDING_QUALIFYING_PURCHASE'),
@@ -509,11 +613,14 @@ export default function StudentReferralPage({
 
         // Incorporate live qualifying purchases from orders table
         for (const o of orderRows) {
-          const orderId = Number(o.id);
+          if (!o) continue;
+          const orderId = Number(o.id) || 0;
           const alreadyExists = Array.from(historyMap.values()).some((h) => h.order_id === orderId);
-          if (!alreadyExists) {
+          if (!alreadyExists && orderId > 0) {
             const syntheticId = 1000 + orderId;
-            const isPaid = o.status === 'COMPLETED' || o.payment_status === 'PAID' || o.payment_status === 'COMPLETED';
+            const oStatus = String(o.status || '').toUpperCase();
+            const pStatus = String(o.payment_status || '').toUpperCase();
+            const isPaid = oStatus === 'COMPLETED' || pStatus === 'PAID' || pStatus === 'COMPLETED';
             historyMap.set(syntheticId, {
               id: syntheticId,
               status: isPaid ? 'COMPLETED' : 'PENDING_QUALIFYING_PURCHASE',
@@ -532,26 +639,26 @@ export default function StudentReferralPage({
 
         // 6. Calculate summary counters strictly from live data
         const totalSuccessful = liveHistory.filter(
-          (h) => h.status === 'COMPLETED' || h.status === 'SUCCESSFUL' || h.reward_status === 'PAID'
+          (h) => h && (h.status === 'COMPLETED' || h.status === 'SUCCESSFUL' || h.reward_status === 'PAID')
         ).length;
 
         const pendingReferrals = liveHistory.filter(
-          (h) => h.status === 'PENDING' || h.status === 'PENDING_QUALIFYING_PURCHASE' || h.status === 'REGISTERED'
+          (h) => h && (h.status === 'PENDING' || h.status === 'PENDING_QUALIFYING_PURCHASE' || h.status === 'REGISTERED')
         ).length;
 
         const eligibleRewards = liveHistory
-          .filter((h) => h.reward_status === 'ELIGIBLE' || (h.status === 'COMPLETED' && h.reward_status !== 'PAID'))
-          .reduce((sum, h) => sum + (h.reward_amount || 0), 0);
+          .filter((h) => h && (h.reward_status === 'ELIGIBLE' || (h.status === 'COMPLETED' && h.reward_status !== 'PAID')))
+          .reduce((sum, h) => sum + (Number(h.reward_amount) || 0), 0);
 
         const paidRewards = liveHistory
-          .filter((h) => h.reward_status === 'PAID' || h.reward_status === 'SETTLED')
-          .reduce((sum, h) => sum + (h.reward_amount || 0), 0);
+          .filter((h) => h && (h.reward_status === 'PAID' || h.reward_status === 'SETTLED'))
+          .reduce((sum, h) => sum + (Number(h.reward_amount) || 0), 0);
 
         // 7. Calculate Level 1-4 stats strictly from live data
         const updatedLevelStats = BASE_LEVEL_CONFIG.map((tier) => {
-          const tierMembers = allLiveTeamMembers.filter((m) => m.level === tier.level);
+          const tierMembers = allLiveTeamMembers.filter((m) => m && m.level === tier.level);
           const activeStudents = tierMembers.length;
-          const purchasedStudents = tierMembers.filter((m) => m.saleBottleneckStatus === 'Project Purchased ✓').length;
+          const purchasedStudents = tierMembers.filter((m) => m && m.saleBottleneckStatus === 'Project Purchased ✓').length;
           let tierEarnings = purchasedStudents * tier.ratePerSale;
 
           if (tier.level === 1 && tierEarnings === 0 && (totalSuccessful > 0 || eligibleRewards > 0 || paidRewards > 0)) {
@@ -570,21 +677,23 @@ export default function StudentReferralPage({
         let livePayouts: ReferralPayoutRecord[] = [];
         try {
           const payoutItems = await StudentPayoutAPI.list(effectiveId, effectiveCode);
-          if (payoutItems.length > 0) {
+          if (Array.isArray(payoutItems) && payoutItems.length > 0) {
             livePayouts = payoutItems.map((p) => ({
-              id: p.payout_id,
-              date: new Date(p.created_at).toLocaleString('en-IN', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              }),
+              id: String(p.payout_id || `PAY-${Math.random().toString(36).substring(2, 6)}`),
+              date: p.created_at
+                ? new Date(p.created_at).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                : 'Recent',
               amount: Number(p.amount || 0),
               paymentMode: p.payment_method === 'UPI' ? 'UPI Transfer' : 'Bank NEFT Transfer',
               account: p.payment_method === 'UPI'
                 ? (p.upi_id || 'UPI VPA')
-                : `${p.bank_account ? `A/C ••••${p.bank_account.slice(-4)}` : 'Bank A/C'} (${p.ifsc_code || ''})`,
+                : `${p.bank_account ? `A/C ••••${String(p.bank_account).slice(-4)}` : 'Bank A/C'} (${p.ifsc_code || ''})`,
               status: p.status === 'PAID' ? 'PAID' : (p.status === 'PROCESSING' ? 'PROCESSING' : 'PENDING'),
               utrRef: p.utr_ref || (p.status === 'PAID' ? 'Settled' : 'Processing (Within 20 Hours)')
             }));
@@ -603,14 +712,15 @@ export default function StudentReferralPage({
           referral_link: typeof window !== 'undefined'
             ? `${window.location.origin}/register?ref=${effectiveCode}`
             : `https://unikart.com/register?ref=${effectiveCode}`,
-          total_successful_referrals: totalSuccessful,
-          pending_referrals: pendingReferrals,
-          eligible_rewards: eligibleRewards,
-          paid_rewards: paidRewards,
-          history: liveHistory
+          total_successful_referrals: totalSuccessful || 0,
+          pending_referrals: pendingReferrals || 0,
+          eligible_rewards: eligibleRewards || 0,
+          paid_rewards: paidRewards || 0,
+          history: liveHistory || []
         });
       } catch (err) {
         if (!active) return;
+        console.error('Referral data load error caught safely:', err);
         setError(err instanceof Error ? err.message : 'Unable to load live referral data.');
         setDashboard(createDefaultDashboard(effectiveId, effectiveCode));
         setLevelStats(createInitialLevelStats());
@@ -624,29 +734,39 @@ export default function StudentReferralPage({
     void loadLiveReferralData();
 
     // Realtime Supabase Subscription: Auto-update on new referrals, orders, verifications, meetings, or payouts
-    const channel = supabase
-      .channel(`unikart-referral-live-${referralCode || studentId || 'isolated'}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
-        void loadLiveReferralData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        void loadLiveReferralData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'verifications' }, () => {
-        void loadLiveReferralData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meetings' }, () => {
-        void loadLiveReferralData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payouts' }, () => {
-        void loadLiveReferralData();
-      })
-      .subscribe();
+    try {
+      const channel = supabase
+        .channel(`unikart-referral-live-${referralCode || studentId || 'isolated'}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals' }, () => {
+          void loadLiveReferralData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+          void loadLiveReferralData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'verifications' }, () => {
+          void loadLiveReferralData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'meetings' }, () => {
+          void loadLiveReferralData();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'payouts' }, () => {
+          void loadLiveReferralData();
+        })
+        .subscribe();
 
-    return () => {
-      active = false;
-      void supabase.removeChannel(channel);
-    };
+      return () => {
+        active = false;
+        try {
+          void supabase.removeChannel(channel);
+        } catch {
+          /* ignore */
+        }
+      };
+    } catch {
+      return () => {
+        active = false;
+      };
+    }
   }, [accessToken, onSessionExpired, retry, studentId, referralCode]);
 
   const share = async () => {
@@ -743,56 +863,68 @@ export default function StudentReferralPage({
     );
   }
 
-  const effectiveCode = dashboard.referral_code || referralCode;
-  const effectiveStudentId = dashboard.student_id || studentId;
-  const effectiveLink = dashboard.referral_link || `https://unikart.com/register?ref=${effectiveCode}`;
-  const totalNetworkEarnings = levelStats.reduce((sum, tier) => sum + tier.totalEarnings, 0);
+  const safeDashboard = dashboard || createDefaultDashboard(studentId, referralCode);
+  const effectiveCode = String(safeDashboard.referral_code || referralCode || studentId || '').trim();
+  const effectiveStudentId = String(safeDashboard.student_id || studentId || '').trim();
+  const effectiveLink = safeDashboard.referral_link || `https://unikart.com/register?ref=${effectiveCode}`;
+
+  const safeLevelStats = Array.isArray(levelStats) ? levelStats : [];
+  const totalNetworkEarnings = safeLevelStats.reduce((sum, tier) => sum + (Number(tier?.totalEarnings) || 0), 0);
 
   // Pending withdrawals hold and available withdrawal balance
-  const pendingWithdrawalTotal = payouts
-    .filter((p) => p.status === 'PENDING' || p.status === 'PROCESSING')
-    .reduce((sum, p) => sum + p.amount, 0);
-  const availableBalance = Math.max(0, dashboard.eligible_rewards - pendingWithdrawalTotal);
-  const level1Members = useMemo(() => teamMembers.filter((m) => m.level === 1), [teamMembers]);
-  const level2Members = useMemo(() => teamMembers.filter((m) => m.level === 2), [teamMembers]);
-  const level3Members = useMemo(() => teamMembers.filter((m) => m.level === 3), [teamMembers]);
-  const level4Members = useMemo(() => teamMembers.filter((m) => m.level === 4), [teamMembers]);
+  const safePayouts = Array.isArray(payouts) ? payouts : [];
+  const pendingWithdrawalTotal = safePayouts
+    .filter((p) => p && (p.status === 'PENDING' || p.status === 'PROCESSING'))
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const eligibleRewardsAmt = Number(safeDashboard.eligible_rewards) || 0;
+  const availableBalance = Math.max(0, eligibleRewardsAmt - pendingWithdrawalTotal);
+
+  const safeTeamMembers = Array.isArray(teamMembers) ? teamMembers : [];
+  const level1Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 1), [safeTeamMembers]);
+  const level2Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 2), [safeTeamMembers]);
+  const level3Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 3), [safeTeamMembers]);
+  const level4Members = useMemo(() => safeTeamMembers.filter((m) => m && m.level === 4), [safeTeamMembers]);
 
   const directTotal = level1Members.length;
   const directVerified = useMemo(
-    () => level1Members.filter((m) => m.verificationStatus === 'Verified').length,
+    () => level1Members.filter((m) => m && m.verificationStatus === 'Verified').length,
     [level1Members]
   );
 
   const indirectTotal = level2Members.length + level3Members.length + level4Members.length;
   const indirectVerified = useMemo(
-    () => teamMembers.filter((m) => m.level >= 2 && m.verificationStatus === 'Verified').length,
-    [teamMembers]
+    () => safeTeamMembers.filter((m) => m && m.level >= 2 && m.verificationStatus === 'Verified').length,
+    [safeTeamMembers]
   );
 
   const actionNeededCount = useMemo(
-    () => teamMembers.filter((m) => m.verificationStatus !== 'Verified').length,
-    [teamMembers]
+    () => safeTeamMembers.filter((m) => m && m.verificationStatus !== 'Verified').length,
+    [safeTeamMembers]
   );
 
   const totalSalesCount = useMemo(
-    () => teamMembers.filter((m) => m.saleBottleneckStatus === 'Project Purchased ✓').length,
-    [teamMembers]
+    () => safeTeamMembers.filter((m) => m && m.saleBottleneckStatus === 'Project Purchased ✓').length,
+    [safeTeamMembers]
   );
 
   const filteredMembers = useMemo(() => {
-    return teamMembers.filter((m) => {
+    return safeTeamMembers.filter((m) => {
+      if (!m) return false;
       const matchesLevel = selectedTabLevel === 'ALL' || String(m.level) === selectedTabLevel;
-      const q = teamSearch.toLowerCase().trim();
+      const q = String(teamSearch || '').toLowerCase().trim();
+      if (!q) return matchesLevel;
+      const sName = String(m.studentName || '').toLowerCase();
+      const sId = String(m.studentId || '').toLowerCase();
+      const cName = String(m.collegeName || '').toLowerCase();
+      const refBy = String(m.referredByName || '').toLowerCase();
       const matchesSearch =
-        !q ||
-        m.studentName.toLowerCase().includes(q) ||
-        m.studentId.toLowerCase().includes(q) ||
-        m.collegeName.toLowerCase().includes(q) ||
-        m.referredByName.toLowerCase().includes(q);
+        sName.includes(q) ||
+        sId.includes(q) ||
+        cName.includes(q) ||
+        refBy.includes(q);
       return matchesLevel && matchesSearch;
     });
-  }, [teamMembers, selectedTabLevel, teamSearch]);
+  }, [safeTeamMembers, selectedTabLevel, teamSearch]);
 
   const level1Referrals = directTotal;
   const isWithdrawalUnlocked = level1Referrals >= 1 && availableBalance > 0;
@@ -1259,7 +1391,7 @@ export default function StudentReferralPage({
                   {teamSearch
                     ? 'No team members match your search'
                     : selectedTabLevel === 'ALL'
-                    ? 'No team members registered in your network yet'
+                    ? 'No team members registered under your referral link yet'
                     : `No team members in Level ${selectedTabLevel} yet`}
                 </h4>
                 <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
@@ -1522,7 +1654,7 @@ export default function StudentReferralPage({
             </button>
           </div>
 
-          {dashboard.history.length === 0 ? (
+          {safeDashboard.history.length === 0 ? (
             <div className="px-5 py-12 text-center">
               <Users className="mx-auto h-8 w-8 text-slate-300" />
               <p className="mt-3 text-sm font-bold text-slate-800">No qualifying orders yet</p>
@@ -1532,28 +1664,28 @@ export default function StudentReferralPage({
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {dashboard.history.map((item) => (
+              {safeDashboard.history.map((item) => (
                 <article key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-slate-50/50">
                   <div>
                     <p className="text-sm font-bold text-slate-900">Attribution Record #{item.id}</p>
-                    <p className="mt-1 text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</p>
-                    {item.order_id !== null && (
+                    <p className="mt-1 text-xs text-slate-500">{item.created_at ? new Date(item.created_at).toLocaleString() : 'Recent'}</p>
+                    {item.order_id !== null && item.order_id !== undefined && (
                       <p className="mt-1 text-xs text-indigo-600 font-semibold flex items-center gap-1">
                         Qualifying Order #{item.order_id} <ArrowRight size={12} />
                       </p>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    {item.reward_amount !== null && (
+                    {item.reward_amount !== null && item.reward_amount !== undefined && (
                       <span className="text-sm font-mono font-extrabold text-slate-900">
                         {formatCurrency(item.reward_amount, item.reward_currency || 'INR')}
                       </span>
                     )}
                     <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold text-indigo-700 border border-indigo-100">
-                      {(item.reward_status || item.status).replaceAll('_', ' ')}
+                      {String(item.reward_status || item.status || 'PENDING').replaceAll('_', ' ')}
                     </span>
                     {item.reward_status === 'PAID' && <Check size={16} className="text-emerald-600" />}
-                    {item.order_id !== null && <ExternalLink size={14} className="text-slate-400" />}
+                    {item.order_id !== null && item.order_id !== undefined && <ExternalLink size={14} className="text-slate-400" />}
                   </div>
                 </article>
               ))}
@@ -1814,5 +1946,13 @@ export default function StudentReferralPage({
         </div>
       )}
     </div>
+  );
+}
+
+export default function StudentReferralPage(props: StudentReferralPageProps) {
+  return (
+    <ReferralErrorBoundary>
+      <StudentReferralPageContent {...props} />
+    </ReferralErrorBoundary>
   );
 }

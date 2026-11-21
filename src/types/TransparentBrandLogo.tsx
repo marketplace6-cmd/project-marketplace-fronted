@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 // In-memory module cache so canvas pixel stripping runs only once across the entire app
 let cachedLogoDataUrl: string | null = null;
+let cachedLogoSrc: string | null = null;
 let isProcessingLogo = false;
 const listeners: Array<(url: string) => void> = [];
 
@@ -11,7 +12,7 @@ export interface TransparentBrandLogoProps extends React.ImgHTMLAttributes<HTMLI
 }
 
 export function TransparentBrandLogo({
-  src = '/unikart-logo.png',
+  src = '/unikart-logo.png?v=3',
   alt = 'Unikart',
   className = 'h-10 w-auto object-contain',
   style,
@@ -20,7 +21,7 @@ export function TransparentBrandLogo({
   const [dataUrl, setDataUrl] = useState<string>(cachedLogoDataUrl || src);
 
   useEffect(() => {
-    if (cachedLogoDataUrl) {
+    if (cachedLogoDataUrl && cachedLogoSrc === src) {
       setDataUrl(cachedLogoDataUrl);
       return;
     }
@@ -61,12 +62,14 @@ export function TransparentBrandLogo({
             ctx.putImageData(imgData, 0, 0);
             const processedUrl = canvas.toDataURL('image/png');
             cachedLogoDataUrl = processedUrl;
+            cachedLogoSrc = src;
             listeners.forEach((fn) => fn(processedUrl));
             listeners.length = 0;
           }
         } catch (e) {
           console.warn('Canvas logo transparency processing fallback:', e);
           cachedLogoDataUrl = src;
+          cachedLogoSrc = src;
           listeners.forEach((fn) => fn(src));
           listeners.length = 0;
         } finally {
@@ -76,6 +79,7 @@ export function TransparentBrandLogo({
 
       img.onerror = () => {
         cachedLogoDataUrl = src;
+        cachedLogoSrc = src;
         listeners.forEach((fn) => fn(src));
         listeners.length = 0;
         isProcessingLogo = false;
@@ -94,7 +98,6 @@ export function TransparentBrandLogo({
       alt={alt}
       className={className}
       style={{
-        mixBlendMode: 'multiply',
         backgroundColor: 'transparent',
         ...style,
       }}
@@ -105,3 +108,4 @@ export function TransparentBrandLogo({
 }
 
 export default TransparentBrandLogo;
+

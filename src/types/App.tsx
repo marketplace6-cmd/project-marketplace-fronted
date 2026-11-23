@@ -881,7 +881,7 @@ export default function App() {
       if (mode === 'login') {
         const cleanEmail = contact.toLowerCase();
         if (!cleanEmail || !cleanEmail.includes('@')) {
-          const err = 'Please enter a valid student email address (e.g. student@umu.ac.in).';
+          const err = 'Please enter a valid student email address (e.g. student@iit.ac.in).';
           setStudentAuthMessage(err);
           showToast(err, 'error');
           setStudentAuthLoading(false);
@@ -2639,7 +2639,7 @@ export default function App() {
               <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full">STUDENT</span>
             </div>
 
-            {/* User Identity Section (Avatar, Name, Student ID, AK Referral Code, Status Badge) */}
+            {/* User Identity Section (Avatar, Name, Student ID, Referral Code, Status Badge) */}
             <div className="pb-4 border-b border-white/10 space-y-3">
               <div className="flex items-center gap-3">
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 font-extrabold text-xl flex items-center justify-center shadow-md">
@@ -2681,14 +2681,14 @@ export default function App() {
                 )}
               </div>
 
-              {/* Student ID & AK Referral Code Badges */}
+              {/* Student ID & Referral Code Badges */}
               <div className="pt-2 border-t border-white/10 grid grid-cols-2 gap-2 text-[11px]">
                 <div className="bg-white/5 rounded-xl p-2.5 border border-white/10">
                   <div className="text-[10px] uppercase font-bold text-indigo-300 tracking-wider">Student ID</div>
                   <div className="font-mono font-extrabold text-white tracking-wide truncate mt-0.5">{studentId}</div>
                 </div>
                 <div className="bg-white/5 rounded-xl p-2.5 border border-white/10">
-                  <div className="text-[10px] uppercase font-bold text-indigo-300 tracking-wider">AK Referral Code</div>
+                  <div className="text-[10px] uppercase font-bold text-indigo-300 tracking-wider">Referral Code</div>
                   <div className="font-mono font-extrabold text-emerald-300 tracking-wider truncate mt-0.5">{akReferralCode}</div>
                 </div>
               </div>
@@ -2891,7 +2891,7 @@ export default function App() {
                 </div>
 
                 <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200">
-                  <div className="text-xs font-semibold text-emerald-700">AK Referral Code</div>
+                  <div className="text-xs font-semibold text-emerald-700">Referral Code</div>
                   <div className="flex items-center justify-between mt-1">
                     <span className="font-mono font-black text-emerald-900 text-lg">{akReferralCode}</span>
                     <button
@@ -2899,7 +2899,7 @@ export default function App() {
                         void copyText(akReferralCode);
                         setCopiedProfileCode(true);
                         setTimeout(() => setCopiedProfileCode(false), 2500);
-                        showToast(`AK Referral Code ${akReferralCode} copied!`, 'success');
+                        showToast(`Referral Code ${akReferralCode} copied!`, 'success');
                       }}
                       className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
                     >
@@ -3027,7 +3027,7 @@ export default function App() {
                           Contact Academic Support &rarr;
                         </a>
                         <span className="text-[11px] text-rose-600 font-medium">
-                          Student ID: {studentId} • AK Referral Code: {akReferralCode}
+                          Student ID: {studentId} • Referral Code: {akReferralCode}
                         </span>
                       </div>
                     </div>
@@ -4032,10 +4032,10 @@ export default function App() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-5">
-              {/* AK Referral Code Box */}
+              {/* Referral Code Box */}
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Your AK Referral Code</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Your Referral Code</span>
                   <span className="text-[11px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     Permanent Code
                   </span>
@@ -4049,7 +4049,7 @@ export default function App() {
                       void copyText(currentAkReferralCode);
                       setCopiedModalCode(true);
                       setTimeout(() => setCopiedModalCode(false), 2500);
-                      showToast(`AK Referral Code ${currentAkReferralCode} copied!`, 'success');
+                      showToast(`Referral Code ${currentAkReferralCode} copied!`, 'success');
                     }}
                     className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
                   >
@@ -4093,7 +4093,7 @@ export default function App() {
                       try {
                         await navigator.share({
                           title: 'Join Unikart with my code ' + currentAkReferralCode,
-                          text: `Explore verified college projects on Unikart! Use my AK Referral Code ${currentAkReferralCode} to get started:`,
+                          text: `Explore verified college projects on Unikart! Use my Referral Code ${currentAkReferralCode} to get started:`,
                           url: currentReferralLink
                         });
                         showToast('Referral link shared successfully!', 'success');

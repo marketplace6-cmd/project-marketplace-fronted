@@ -1523,7 +1523,7 @@ function generatePaymentProofSvg(info: {
   <text x="45" y="245" font-family="system-ui, sans-serif" font-size="14" font-weight="800" fill="#0f172a">${escapeXml(studentName)}</text>
   <text x="45" y="280" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">STUDENT ID</text>
   <text x="45" y="300" font-family="monospace" font-size="13" font-weight="800" fill="#4338ca">${escapeXml(studentIdCode || studentId)}</text>
-  <text x="230" y="225" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">AK REFERRAL CODE</text>
+  <text x="230" y="225" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">REFERRAL CODE</text>
   <text x="230" y="245" font-family="monospace" font-size="14" font-weight="800" fill="#059669">${escapeXml(referralCode || 'A7K2')}</text>
   <text x="230" y="280" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">BENEFICIARY</text>
   <text x="230" y="300" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#1e293b">Unikart Escrow Services</text>
@@ -1573,7 +1573,7 @@ function generateProjectPreviewSvg(info: {
   <text x="45" y="290" font-family="system-ui, sans-serif" font-size="13" font-weight="800" fill="#0f172a">${escapeXml(studentName)}</text>
   <text x="210" y="270" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">STUDENT ID</text>
   <text x="210" y="290" font-family="monospace" font-size="13" font-weight="800" fill="#4338ca">${escapeXml(studentIdCode || studentId)}</text>
-  <text x="360" y="270" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">AK REFERRAL CODE</text>
+  <text x="360" y="270" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">REFERRAL CODE</text>
   <text x="360" y="290" font-family="monospace" font-size="13" font-weight="800" fill="#059669">${escapeXml(referralCode || 'A7K2')}</text>
   <rect x="45" y="315" width="510" height="32" rx="6" fill="#f1f5f9" stroke="#cbd5e1"/>
   <text x="300" y="335" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#475569" text-anchor="middle">WATERMARKED ACADEMIC PREVIEW • PROTECTED BY UNIKART VERIFICATION</text>
@@ -1612,7 +1612,7 @@ function generateStudentIdCardSvg(info: {
   <text x="200" y="198" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#1e293b">${escapeXml(course)}</text>
   <text x="200" y="228" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">PHONE NUMBER</text>
   <text x="200" y="246" font-family="system-ui, sans-serif" font-size="13" font-weight="600" fill="#334155">${escapeXml(phone)}</text>
-  <text x="400" y="178" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#059669">AK REFERRAL CODE</text>
+  <text x="400" y="178" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#059669">REFERRAL CODE</text>
   <text x="400" y="198" font-family="monospace" font-size="14" font-weight="800" fill="#047857">${escapeXml(referralCode || 'A7K2')}</text>
   <text x="400" y="228" font-family="system-ui, sans-serif" font-size="10" font-weight="700" fill="#64748b">ACADEMIC STATUS</text>
   <text x="400" y="246" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="#16a34a">Active Student</text>

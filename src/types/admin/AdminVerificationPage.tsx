@@ -625,7 +625,7 @@ export default function AdminVerificationPage({
                 <tr>
                   <th className="px-5 py-3.5 font-bold whitespace-nowrap min-w-[180px]">Student Name</th>
                   <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[120px]">Student ID</th>
-                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[130px]">AK Referral Code</th>
+                  <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[130px]">Referral Code</th>
                   <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[240px]">Uploaded Document / Image Preview</th>
                   <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[160px]">College / University</th>
                   <th className="px-4 py-3.5 font-bold whitespace-nowrap min-w-[150px]">Contact Details</th>
@@ -669,7 +669,7 @@ export default function AdminVerificationPage({
                         </span>
                       </td>
 
-                      {/* 3. AK Referral Code */}
+                      {/* 3. Referral Code */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 text-xs">
                           {referralCodeDisplay}
@@ -689,7 +689,7 @@ export default function AdminVerificationPage({
                       {/* 6. Contact */}
                       <td className="px-4 py-3.5 text-slate-600 whitespace-nowrap">
                         <div className="font-semibold text-slate-900">{item.phone || '7004273758'}</div>
-                        <div className="text-[11px] text-slate-400 truncate max-w-[160px]">{item.email || 'student@umu.ac.in'}</div>
+                        <div className="text-[11px] text-slate-400 truncate max-w-[160px]">{item.email || 'student@iit.ac.in'}</div>
                       </td>
 
                       {/* 7. Submitted Date */}
@@ -861,7 +861,7 @@ export default function AdminVerificationPage({
                     </div>
 
                     <div className="bg-white p-2.5 rounded-xl border border-emerald-200 shadow-2xs">
-                      <p className="font-bold text-emerald-700 uppercase text-[9px]">AK Referral Code</p>
+                      <p className="font-bold text-emerald-700 uppercase text-[9px]">Referral Code</p>
                       <p className="font-mono font-black text-emerald-800 text-xs mt-0.5">
                         {selected.referral_code || 'A7K2'}
                       </p>
@@ -885,7 +885,7 @@ export default function AdminVerificationPage({
 
                   <div>
                     <p className="font-bold text-slate-500 uppercase text-[10px]">Email Address</p>
-                    <p className="mt-0.5 font-medium text-slate-800 text-xs truncate">{selected.email || 'student@umu.ac.in'}</p>
+                    <p className="mt-0.5 font-medium text-slate-800 text-xs truncate">{selected.email || 'student@iit.ac.in'}</p>
                   </div>
 
                   <div>

@@ -6,7 +6,7 @@ export const INITIAL_MENTOR_DEALS: MentorDirectDeal[] = [
     studentId: 'STU-2026-0001',
     studentName: 'Mayank Kumar',
     studentContact: '+91 98765 43210',
-    studentEmail: 'mayank.kumar@student.umu.ac.in',
+    studentEmail: 'mayank.kumar@student.iit.ac.in',
     collegeName: 'Usha Martin University',
     projectId: 'PRJ-101',
     projectTitle: 'AI-Powered Resume Screener with NLP Ranking',

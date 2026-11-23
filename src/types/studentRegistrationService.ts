@@ -311,7 +311,7 @@ export const StudentRegistrationService = {
 
     const cleanContact = input.contact.trim().toLowerCase();
     const isEmail = contactValidation.type === 'email';
-    const emailVal = isEmail ? cleanContact : `${input.full_name.toLowerCase().replace(/\s+/g, '')}@student.umu.ac.in`;
+    const emailVal = isEmail ? cleanContact : `${input.full_name.toLowerCase().replace(/\s+/g, '')}@student.iit.ac.in`;
     const phoneVal = !isEmail ? cleanContact.replace(/\D/g, '') : '7004273758';
 
     // Verify that OTP verification succeeded for this contact

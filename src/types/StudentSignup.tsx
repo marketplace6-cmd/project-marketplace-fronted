@@ -534,7 +534,7 @@ export default function StudentSignup({
                     setEmail(e.target.value);
                     setFormError('');
                   }}
-                  placeholder="e.g. student@umu.ac.in or you@gmail.com"
+                  placeholder="e.g. student@iit.ac.in or you@gmail.com"
                   className="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 transition-all outline-none"
                 />
                 <Mail size={16} className="absolute left-3.5 top-3 text-purple-500 pointer-events-none" />

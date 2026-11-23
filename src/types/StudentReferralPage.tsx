@@ -178,7 +178,7 @@ export const BASE_LEVEL_CONFIG = [
     badge: 'Level 1 (Direct)',
     commission: '15%',
     ratePerSale: 150,
-    description: 'Students who registered directly with your personal AK Referral Code.'
+    description: 'Students who registered directly with your personal Referral Code.'
   },
   {
     level: 2,
@@ -869,8 +869,8 @@ function StudentReferralPageContent({
       await copyText(dashboard.referral_code);
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2500);
-      setMessage(`AK Referral Code ${dashboard.referral_code} copied!`);
-      onToast?.(`AK Referral Code ${dashboard.referral_code} copied!`, 'success');
+      setMessage(`Referral Code ${dashboard.referral_code} copied!`);
+      onToast?.(`Referral Code ${dashboard.referral_code} copied!`, 'success');
     } catch {
       onToast?.('Unable to copy referral code.', 'error');
     }
@@ -1031,7 +1031,7 @@ function StudentReferralPageContent({
           {/* Referral Code & Link Box */}
           <div className="min-w-0 rounded-2xl border border-white/15 bg-white/10 p-5 lg:w-[440px] shadow-inner space-y-3.5">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-200">Permanent AK Referral Code</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-200">Permanent Referral Code</p>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
                 Active Code
               </span>
@@ -1158,7 +1158,7 @@ function StudentReferralPageContent({
             </div>
             <p className="text-xs text-slate-600 leading-relaxed max-w-xl">
               {level1Referrals === 0
-                ? 'Unlockable after achieving at least 1 Level 1 referral. Share your AK Referral Code to get direct classmates to register and purchase.'
+                ? 'Unlockable after achieving at least 1 Level 1 referral. Share your Referral Code to get direct classmates to register and purchase.'
                 : availableBalance <= 0
                 ? 'Level 1 unlocked! Payout becomes available as soon as your referrals generate eligible rewards.'
                 : 'Your withdrawal request will be processed and transferred within 20 hours to your verified UPI ID or Bank account.'}
@@ -1399,7 +1399,7 @@ function StudentReferralPageContent({
                 </h4>
                 <p className="mt-1 text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                   {selectedTabLevel === '1' || selectedTabLevel === 'ALL'
-                    ? 'Share your personal AK Referral Code with college classmates to start building your direct Level 1 team.'
+                    ? 'Share your personal Referral Code with college classmates to start building your direct Level 1 team.'
                     : `When your Level ${Number(selectedTabLevel) - 1} team members invite classmates, they will automatically appear here as Level ${selectedTabLevel} referrals.`}
                 </p>
                 {(selectedTabLevel === '1' || selectedTabLevel === 'ALL') && !teamSearch && (
@@ -1575,7 +1575,7 @@ function StudentReferralPageContent({
               <CreditCard className="mx-auto h-9 w-9 text-slate-300" />
               <p className="mt-3 text-sm font-bold text-slate-800">No payout settlements yet</p>
               <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                No referral activity yet. Share your AK Referral Code to start earning! Payout settlements are automatically disbursed to your verified UPI account once students complete verified project purchases.
+                No referral activity yet. Share your Referral Code to start earning! Payout settlements are automatically disbursed to your verified UPI account once students complete verified project purchases.
               </p>
             </div>
           ) : (
@@ -1662,7 +1662,7 @@ function StudentReferralPageContent({
               <Users className="mx-auto h-8 w-8 text-slate-300" />
               <p className="mt-3 text-sm font-bold text-slate-800">No qualifying orders yet</p>
               <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                No referral activity yet. Share your AK Referral Code to start earning! When students register and purchase verified projects with your code, their qualifying orders will appear here.
+                No referral activity yet. Share your Referral Code to start earning! When students register and purchase verified projects with your code, their qualifying orders will appear here.
               </p>
             </div>
           ) : (

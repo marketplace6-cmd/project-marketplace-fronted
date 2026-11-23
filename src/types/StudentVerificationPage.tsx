@@ -435,7 +435,7 @@ export default function StudentVerificationPage({
               <form onSubmit={submit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block text-xs font-semibold text-slate-700">Student Full Name
-                    <input required minLength={2} maxLength={100} value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder="e.g. Mayank Kumar" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+                    <input required minLength={2} maxLength={100} value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder="e.g. Janki" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
                   </label>
                   <label className="block text-xs font-semibold text-slate-700">Email Address
                     <input type="email" value={studentEmail} onChange={(event) => setStudentEmail(event.target.value)} placeholder="student@example.com" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
@@ -444,7 +444,7 @@ export default function StudentVerificationPage({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block text-xs font-semibold text-slate-700">College / University Name
-                    <input required minLength={2} maxLength={150} value={studentCollege} onChange={(event) => setStudentCollege(event.target.value)} placeholder="e.g. Usha Martin University" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+                    <input required minLength={2} maxLength={150} value={studentCollege} onChange={(event) => setStudentCollege(event.target.value)} placeholder="e.g. Janak University" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
                   </label>
                   <label className="block text-xs font-semibold text-slate-700">Course / Department
                     <input required minLength={2} maxLength={150} value={studentCourse} onChange={(event) => setStudentCourse(event.target.value)} placeholder="e.g. B.Tech Computer Science" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />

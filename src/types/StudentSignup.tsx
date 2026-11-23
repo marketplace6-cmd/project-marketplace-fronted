@@ -472,7 +472,7 @@ export default function StudentSignup({
                   maxLength={100}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Mayank Kumar"
+                  placeholder="e.g. Janki"
                   className="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 transition-all outline-none"
                 />
                 <User size={16} className="absolute left-3.5 top-3 text-purple-500 pointer-events-none" />
@@ -492,7 +492,7 @@ export default function StudentSignup({
                   maxLength={150}
                   value={college}
                   onChange={(e) => setCollege(e.target.value)}
-                  placeholder="e.g. Usha Martin University, Ranchi"
+                  placeholder="e.g. Janak University"
                   className="w-full rounded-xl border border-slate-300 pl-10 pr-3.5 py-2.5 text-sm font-normal text-slate-900 placeholder:text-slate-400 focus:border-purple-600 focus:ring-2 focus:ring-purple-100 transition-all outline-none"
                 />
                 <GraduationCap size={16} className="absolute left-3.5 top-3 text-purple-500 pointer-events-none" />

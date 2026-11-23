@@ -356,10 +356,10 @@ export default function App() {
     }
   }, []);
 
-  const currentStudentName = student.fullName || 'Mayank Kumar';
+  const currentStudentName = student.fullName || 'Janki';
   const currentStudentId = (student.id && student.id !== 'STU-000-000') ? student.id : 'STU-2026-0001';
   const currentAkReferralCode = student.referralCode || student.id || '';
-  const currentCollege = student.collegeName || 'Usha Martin University';
+  const currentCollege = student.collegeName || 'Janak University';
   const currentReferralLink = typeof window !== 'undefined'
     ? `${window.location.origin}/register?ref=${currentAkReferralCode}`
     : `https://unikart.com/register?ref=${currentAkReferralCode}`;

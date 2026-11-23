@@ -238,7 +238,7 @@ function StudentReferralPageContent({
   onSessionExpired,
   onLogin,
   studentId = 'STU-2026-0001',
-  studentName = 'Mayank Kumar',
+  studentName = 'Janki',
   studentMobile = '',
   referralCode = '',
   onToast
